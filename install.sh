@@ -25,6 +25,7 @@ header(){ echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 cleanup() { exit 1; }
 trap cleanup INT TERM
 
+PM=""
 DETECTED_DIR=""
 if [ -f "main.py" ] && [ -f "requirements.txt" ]; then
     DETECTED_DIR="$(pwd)"
@@ -40,6 +41,11 @@ detect_os() {
         . /etc/os-release
         OS_ID="$ID"; OS_VERSION="$VERSION_ID"
     fi
+    if command -v dnf &>/dev/null; then
+        PM="dnf"
+    elif command -v yum &>/dev/null; then
+        PM="yum"
+    fi
 }
 
 install_system_deps() {
@@ -49,9 +55,7 @@ install_system_deps() {
             sudo apt-get install -y -qq python3 python3-pip python3-venv git curl
             ;;
         centos|rhel|fedora|almalinux|rocky)
-            local pm="yum"
-            command -v dnf &>/dev/null && pm="dnf"
-            sudo $pm install -y python3 python3-pip python3-venv git curl
+            sudo $PM install -y python3 python3-pip python3-venv git curl
             ;;
         *)
             warn "Неизвестный дистрибутив. Предполагаю, что Python уже установлен."
@@ -71,6 +75,24 @@ check_python() {
     local min=$(echo "$VER" | cut -d. -f2)
     if [ "$maj" -lt 3 ] || { [ "$maj" -eq 3 ] && [ "$min" -lt 8 ]; }; then
         err "Требуется Python 3.8+, найден $VER"; exit 1
+    fi
+
+    if ! $PY -m venv --help &>/dev/null; then
+        case "$OS_ID" in
+            ubuntu|debian)
+                info "Устанавливаю python3-venv..."
+                sudo apt-get install -y -qq python3-venv
+                ;;
+            centos|rhel|fedora|almalinux|rocky)
+                info "Устанавливаю python3-venv..."
+                sudo $PM install -y python3-venv 2>/dev/null || true
+                ;;
+        esac
+        if ! $PY -m venv --help &>/dev/null; then
+            err "python3-venv не удалось установить."
+            err "Установите вручную: sudo apt install python3-venv"
+            exit 1
+        fi
     fi
 }
 
