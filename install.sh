@@ -81,30 +81,31 @@ check_python() {
 }
 
 install_venv_if_needed() {
-    local testdir="/tmp/.tik_venv_test_$$"
-    $PY -m venv "$testdir" &>/dev/null && { rm -rf "$testdir"; return 0; }
-    rm -rf "$testdir"
+    # ensurepip — отдельный пакет в Ubuntu/Debian, без него venv не работает
+    if $PY -c "import ensurepip" &>/dev/null; then
+        return 0
+    fi
 
     case "$OS_ID" in
         ubuntu|debian)
-            warn "python3-venv не установлен. Устанавливаю..."
-            sudo apt-get install -y -qq python3-venv 2>/dev/null || \
-            sudo apt-get install -y -qq python3.12-venv 2>/dev/null || \
-            sudo apt-get install -y -qq python3.11-venv 2>/dev/null || true
+            warn "ensurepip не найден. Устанавливаю python3-venv..."
+            local pkg
+            pkg=$($PY -c "import sys; print(f'python3.{sys.version_info.minor}-venv')" 2>/dev/null || echo "python3-venv")
+            sudo apt-get install -y -qq "$pkg" || {
+                err "Выполните вручную: sudo apt install $pkg"
+                exit 1
+            }
             ;;
         centos|rhel|fedora|almalinux|rocky)
-            warn "python3-venv не установлен. Устанавливаю..."
-            sudo $PM install -y python3-venv 2>/dev/null || true
+            warn "ensurepip не найден. Устанавливаю python3-venv..."
+            sudo $PM install -y python3-venv || true
             ;;
     esac
 
-    $PY -m venv "$testdir" &>/dev/null || {
-        rm -rf "$testdir"
-        err "Не удалось создать виртуальное окружение."
-        err "Установите python3-venv вручную: sudo apt install python3-venv"
+    if ! $PY -c "import ensurepip" &>/dev/null; then
+        err "ensurepip всё ещё недоступен. Установите python3-venv вручную."
         exit 1
-    }
-    rm -rf "$testdir"
+    fi
     log "python3-venv установлен"
 }
 
