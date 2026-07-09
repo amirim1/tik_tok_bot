@@ -6,6 +6,15 @@ __pycache__/
 venv/
 .env
 
+# Rate limit persistence
+rate_limit.json
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
 # Logs
 bot.log
 *.log
