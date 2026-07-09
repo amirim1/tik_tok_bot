@@ -22,9 +22,9 @@ def start(message):
         "*Привет! Я бот для скачивания видео из TikTok*\n\n"
         "Просто отправь мне ссылку на видео, и я скачаю его для тебя.\n\n"
         "*Важно:*\n"
-        "* Поддерживаются только публичные видео\n"
-        f"* Максимальный размер: {MAX_FILE_SIZE_MB}MB\n"
-        "* Только для личного использования",
+        "• Поддерживаются только публичные видео\n"
+        f"• Максимальный размер: {MAX_FILE_SIZE_MB}MB\n"
+        "• Только для личного использования",
         parse_mode='Markdown',
         reply_markup=markup,
     )
@@ -37,9 +37,9 @@ def callback_handler(call):
         bot.send_message(
             call.message.chat.id,
             "*Примеры ссылок:*\n"
-            "* https://vm.tiktok.com/ZMJxw5p3D/\n"
-            "* https://www.tiktok.com/@username/video/1234567890123456789\n"
-            "* https://vt.tiktok.com/ZSdjx4HkR/",
+            "• https://vm.tiktok.com/ZMJxw5p3D/\n"
+            "• https://www.tiktok.com/@username/video/1234567890123456789\n"
+            "• https://vt.tiktok.com/ZSdjx4HkR/",
             parse_mode='Markdown',
         )
     elif call.data == "help":
@@ -67,8 +67,8 @@ def handle_video_request(message):
             message,
             "Это не похоже на корректную ссылку TikTok.\n\n"
             "Примеры корректных ссылок:\n"
-            "* https://www.tiktok.com/@user/video/123456789\n"
-            "* https://vm.tiktok.com/ZMJxw5p3D/",
+            "• https://www.tiktok.com/@user/video/123456789\n"
+            "• https://vm.tiktok.com/ZMJxw5p3D/",
         )
         return
 
@@ -83,9 +83,9 @@ def handle_video_request(message):
             bot.edit_message_text(
                 "Не удалось получить видео.\n\n"
                 "Возможные причины:\n"
-                "* Видео недоступно или удалено\n"
-                "* Видео приватное\n"
-                "* Временные проблемы с сервисом",
+                "• Видео недоступно или удалено\n"
+                "• Видео приватное\n"
+                "• Временные проблемы с сервисом",
                 message.chat.id, status_msg.message_id,
             )
             return
