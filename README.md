@@ -1,6 +1,26 @@
-# TikTok Downloader Bot
+# Downloader Bot
 
-Telegram бот для скачивания видео из TikTok.
+Telegram бот для скачивания видео из TikTok, Instagram, YouTube, Twitter и других платформ.
+
+## Возможности
+
+| Возможность | Статус |
+|-------------|--------|
+| TikTok (через собственные API) | ✅ |
+| Instagram (Reels, посты) | ✅ |
+| YouTube / YouTube Shorts | ✅ |
+| Twitter / X | ✅ |
+| Reddit | ✅ |
+| Facebook | ✅ |
+| Pinterest | ✅ |
+| Vimeo | ✅ |
+| VK | ✅ |
+| Ограничение доступа по user ID | ✅ |
+| Rate limit с персистентностью | ✅ |
+| Проверка контента (MP4 magic bytes) | ✅ |
+| Автоустановка одной командой | ✅ |
+| Docker | ✅ |
+| systemd автозапуск | ✅ |
 
 ## Быстрая установка (одной командой)
 
@@ -43,7 +63,7 @@ docker run --env-file .env tik-tok-bot
 ```bash
 sudo tee /etc/systemd/system/tik-tok-bot.service > /dev/null << EOF
 [Unit]
-Description=TikTok Downloader Bot
+Description=Downloader Bot
 After=network.target
 
 [Service]
@@ -76,3 +96,16 @@ sudo systemctl enable --now tik-tok-bot
 | `RATE_LIMIT_WINDOW` | `60` | Окно лимита (сек) |
 | `ALLOWED_USERS` | (пусто) | Ограничение доступа по ID |
 | `DOWNLOAD_TIMEOUT` | `30` | Таймаут загрузки (сек) |
+
+## История версий
+
+### v0.2 — Multi-service
+- Поддержка Instagram, YouTube, Twitter/X, Reddit, Facebook, Pinterest, Vimeo, VK
+- Универсальный скачиватель на `yt-dlp` (~1500 сайтов)
+- Модульная архитектура `src/downloaders/`
+- Валидация URL для всех поддерживаемых платформ
+
+### v0.1 — Initial
+- Скачивание TikTok через 3 API с fallback
+- Rate limit, контроль доступа, Docker, systemd
+- Автоустановка одной командой
