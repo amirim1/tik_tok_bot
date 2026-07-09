@@ -152,7 +152,7 @@ setup_venv() {
 setup_env() {
     if [ -f ".env" ]; then
         # Очищаем inline-комментарии (systemd EnvironmentFile их не понимает)
-        if grep -q '#.*=' ".env"; then
+        if grep -q '=.*#' ".env"; then
             warn "Очищаю inline-комментарии в .env..."
             if [[ "$(uname -s)" == "Darwin" ]]; then
                 sed -i '' 's/[[:space:]]*#.*$//' ".env"
