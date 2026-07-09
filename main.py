@@ -3,28 +3,33 @@ import requests
 from datetime import datetime
 
 from src.config import TOKEN, TEMP_DIR, MAX_FILE_SIZE, MAX_FILE_SIZE_MB, ALLOWED_USERS, logger
-from src.downloader import TikTokDownloader
-from src.utils import rate_limit, validate_tiktok_url, check_access, is_valid_mp4, cleanup_old_files
+from src.downloaders import get_downloader, detect_service, close_all
+from src.utils import rate_limit, validate_url, check_access, is_valid_mp4, cleanup_old_files
 
 bot = telebot.TeleBot(TOKEN)
-downloader = TikTokDownloader()
+
+SUPPORTED_SERVICES = [
+    "TikTok", "Instagram (Reels, посты)", "YouTube / YouTube Shorts",
+    "Twitter / X", "Reddit", "Facebook", "Pinterest", "Vimeo",
+]
 
 
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(
-        telebot.types.InlineKeyboardButton("Пример ссылки", callback_data="example"),
+        telebot.types.InlineKeyboardButton("Список сервисов", callback_data="services"),
         telebot.types.InlineKeyboardButton("Помощь", callback_data="help"),
     )
+    services_list = "\n".join(f"• {s}" for s in SUPPORTED_SERVICES)
     bot.send_message(
         message.chat.id,
-        "*Привет! Я бот для скачивания видео из TikTok*\n\n"
-        "Просто отправь мне ссылку на видео, и я скачаю его для тебя.\n\n"
-        "*Важно:*\n"
-        "• Поддерживаются только публичные видео\n"
-        f"• Максимальный размер: {MAX_FILE_SIZE_MB}MB\n"
-        "• Только для личного использования",
+        "*Привет! Я бот для скачивания видео*\n\n"
+        "Просто отправь ссылку на видео — я скачаю его для тебя.\n\n"
+        "*Поддерживаемые платформы:*\n"
+        f"{services_list}\n\n"
+        f"*Максимальный размер:* {MAX_FILE_SIZE_MB}MB\n"
+        "*Только для личного использования*",
         parse_mode='Markdown',
         reply_markup=markup,
     )
@@ -33,22 +38,22 @@ def start(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     bot.answer_callback_query(call.id)
-    if call.data == "example":
+    if call.data == "services":
+        services_list = "\n".join(f"• {s}" for s in SUPPORTED_SERVICES)
         bot.send_message(
             call.message.chat.id,
-            "*Примеры ссылок:*\n"
-            "• https://vm.tiktok.com/ZMJxw5p3D/\n"
-            "• https://www.tiktok.com/@username/video/1234567890123456789\n"
-            "• https://vt.tiktok.com/ZSdjx4HkR/",
+            "*Поддерживаемые платформы:*\n"
+            f"{services_list}",
             parse_mode='Markdown',
         )
     elif call.data == "help":
         bot.send_message(
             call.message.chat.id,
             "*Советы:*\n"
-            "1. Копируйте ссылку через 'Поделиться'\n"
+            "1. Скопируйте ссылку через 'Поделиться'\n"
             "2. Убедитесь, что видео публичное\n"
-            "3. Если не работает, попробуйте другую ссылку",
+            "3. Отправьте ссылку боту\n"
+            "4. Если не работает — попробуйте другую ссылку",
             parse_mode='Markdown',
         )
 
@@ -62,21 +67,27 @@ def handle_video_request(message):
 
     url = message.text.strip()
 
-    if not validate_tiktok_url(url):
-        bot.reply_to(
-            message,
-            "Это не похоже на корректную ссылку TikTok.\n\n"
-            "Примеры корректных ссылок:\n"
-            "• https://www.tiktok.com/@user/video/123456789\n"
-            "• https://vm.tiktok.com/ZMJxw5p3D/",
-        )
+    if not validate_url(url):
+        service = detect_service(url)
+        if not service:
+            bot.reply_to(
+                message,
+                "Эта платформа пока не поддерживается.\n\n"
+                "Поддерживаемые платформы:\n" +
+                "\n".join(f"• {s}" for s in SUPPORTED_SERVICES),
+            )
+            return
+
+    downloader, service_name = get_downloader(url)
+    if not downloader:
+        bot.reply_to(message, "Не удалось определить тип ссылки.")
         return
 
-    status_msg = bot.reply_to(message, "*Обработка запроса...*", parse_mode='Markdown')
+    status_msg = bot.reply_to(message, "*Обрабатываю запрос...*", parse_mode='Markdown')
     video_path = None
 
     try:
-        logger.info(f"Request from {message.from_user.id}: {url}")
+        logger.info(f"Request from {message.from_user.id} [{service_name}]: {url}")
         video_info = downloader.get_video(url)
 
         if not video_info:
@@ -149,7 +160,7 @@ def handle_video_request(message):
                 if len(desc) > 150:
                     desc = desc[:150] + "..."
                 cap += f"{desc}\n"
-            cap += "\nСкачано через TikTok Downloader Bot"
+            cap += "\nСкачано через Downloader Bot"
             bot.send_video(
                 message.chat.id, vf,
                 caption=cap,
@@ -190,11 +201,12 @@ def handle_video_request(message):
 
 def main():
     logger.info("=" * 50)
-    logger.info("Starting TikTok Downloader Bot")
+    logger.info("Starting Downloader Bot")
     logger.info(f"Temp dir: {TEMP_DIR.absolute()}")
     logger.info(f"Max file size: {MAX_FILE_SIZE_MB}MB")
     if ALLOWED_USERS:
         logger.info(f"Access restricted to users: {ALLOWED_USERS}")
+    logger.info(f"Services: {', '.join(SUPPORTED_SERVICES)}")
     logger.info("=" * 50)
 
     try:
@@ -215,7 +227,7 @@ def main():
         logger.error(f"Fatal error: {e}", exc_info=True)
     finally:
         logger.info("Shutting down...")
-        downloader.close()
+        close_all()
         cleanup_old_files(max_age_minutes=0)
         logger.info("Bot stopped")
 

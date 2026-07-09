@@ -6,11 +6,12 @@ import requests
 from bs4 import BeautifulSoup
 
 from src.config import MAX_DOWNLOAD_RETRIES, DOWNLOAD_TIMEOUT
+from src.downloaders.base import BaseDownloader
 
 logger = logging.getLogger(__name__)
 
 
-class TikTokDownloader:
+class TikTokDownloader(BaseDownloader):
     def __init__(self, max_retries: int = None):
         self.max_retries = max_retries or MAX_DOWNLOAD_RETRIES
         self.apis = [
@@ -76,7 +77,6 @@ class TikTokDownloader:
             )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, 'lxml')
-
             selectors = [
                 'a[href*="snaptik.app/dle-"]',
                 '.download-link a',
@@ -89,7 +89,6 @@ class TikTokDownloader:
                 link = soup.select_one(sel)
                 if link and link.get('href'):
                     break
-
             if link and link.get('href'):
                 author_el = soup.select_one('.video-author, .author-name, .username')
                 desc_el = soup.select_one('.video-description, .description, .caption')
@@ -115,7 +114,7 @@ class TikTokDownloader:
                 if attempt < self.max_retries - 1:
                     time.sleep(1)
             time.sleep(0.5)
-        logger.error(f"All APIs failed for: {url}")
+        logger.warning(f"TikTok APIs failed, falling back to yt-dlp for: {url}")
         return None
 
     def close(self):

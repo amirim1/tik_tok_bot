@@ -70,13 +70,34 @@ def rate_limit(bot_instance, max_calls=None, time_window=None):
     return decorator
 
 
-def validate_tiktok_url(url: str) -> bool:
-    patterns = [
+URL_PATTERNS = {
+    "tiktok": [
         r'https?://(?:www\.)?tiktok\.com/@[\w.-]+/video/\d+',
         r'https?://(?:vm|vt)\.tiktok\.com/[\w-]+',
         r'https?://(?:m\.)?tiktok\.com/v/\d+',
-    ]
-    return any(re.match(p, url) for p in patterns)
+    ],
+}
+
+YTDLP_DOMAINS = [
+    "instagram.com", "instagr.am",
+    "youtube.com", "youtu.be",
+    "twitter.com", "x.com",
+    "reddit.com", "redd.it",
+    "facebook.com", "fb.watch", "fb.com",
+    "pinterest.com", "pin.it",
+    "vimeo.com",
+    "vk.com",
+]
+
+
+def validate_url(url: str) -> bool:
+    for patterns in URL_PATTERNS.values():
+        if any(re.match(p, url) for p in patterns):
+            return True
+    for domain in YTDLP_DOMAINS:
+        if domain in url:
+            return True
+    return False
 
 
 def check_access(user_id: int) -> bool:
