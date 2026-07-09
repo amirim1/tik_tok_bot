@@ -77,23 +77,35 @@ check_python() {
         err "Требуется Python 3.8+, найден $VER"; exit 1
     fi
 
-    if ! $PY -m venv --help &>/dev/null; then
-        case "$OS_ID" in
-            ubuntu|debian)
-                info "Устанавливаю python3-venv..."
-                sudo apt-get install -y -qq python3-venv
-                ;;
-            centos|rhel|fedora|almalinux|rocky)
-                info "Устанавливаю python3-venv..."
-                sudo $PM install -y python3-venv 2>/dev/null || true
-                ;;
-        esac
-        if ! $PY -m venv --help &>/dev/null; then
-            err "python3-venv не удалось установить."
-            err "Установите вручную: sudo apt install python3-venv"
-            exit 1
-        fi
-    fi
+    install_venv_if_needed
+}
+
+install_venv_if_needed() {
+    local testdir="/tmp/.tik_venv_test_$$"
+    $PY -m venv "$testdir" &>/dev/null && { rm -rf "$testdir"; return 0; }
+    rm -rf "$testdir"
+
+    case "$OS_ID" in
+        ubuntu|debian)
+            warn "python3-venv не установлен. Устанавливаю..."
+            sudo apt-get install -y -qq python3-venv 2>/dev/null || \
+            sudo apt-get install -y -qq python3.12-venv 2>/dev/null || \
+            sudo apt-get install -y -qq python3.11-venv 2>/dev/null || true
+            ;;
+        centos|rhel|fedora|almalinux|rocky)
+            warn "python3-venv не установлен. Устанавливаю..."
+            sudo $PM install -y python3-venv 2>/dev/null || true
+            ;;
+    esac
+
+    $PY -m venv "$testdir" &>/dev/null || {
+        rm -rf "$testdir"
+        err "Не удалось создать виртуальное окружение."
+        err "Установите python3-venv вручную: sudo apt install python3-venv"
+        exit 1
+    }
+    rm -rf "$testdir"
+    log "python3-venv установлен"
 }
 
 prepare_dir() {
@@ -119,6 +131,15 @@ clone_repo() {
 }
 
 setup_venv() {
+    if [ -f "venv/bin/python3" ]; then
+        info "Виртуальное окружение уже существует. Пропускаю."
+        source venv/bin/activate
+        return
+    fi
+    if [ -d "venv" ]; then
+        warn "Обнаружено повреждённое venv. Удаляю и создаю заново..."
+        rm -rf venv
+    fi
     info "Создаю виртуальное окружение..."
     $PY -m venv venv
     source venv/bin/activate
