@@ -3,8 +3,9 @@
 # TikTok Downloader Bot — автоматическая установка
 #
 # Использование:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/<USER>/tik_tok_bot/main/install.sh)
-#   # или локально:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/amirim1/tik_tok_bot/main/install.sh)
+#   INSTALL_DIR=/srv/tiktok-bot bash <(curl -fsSL ...)  # кастомный путь
+#   # или локально из репозитория:
 #   bash install.sh
 #
 set -euo pipefail
@@ -12,7 +13,7 @@ set -euo pipefail
 REPO_OWNER="${REPO_OWNER:-amirim1}"
 REPO_NAME="tik_tok_bot"
 REPO_BRANCH="main"
-REPO_DIR="$REPO_NAME"
+INSTALL_DIR="${INSTALL_DIR:-/opt/tik_tok_bot}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 log()   { echo -e "${GREEN}[✓]${NC} $1"; }
@@ -73,21 +74,25 @@ check_python() {
     fi
 }
 
-clone_repo() {
-    local url
-    if [ -n "$REPO_OWNER" ]; then
-        url="https://github.com/$REPO_OWNER/$REPO_NAME.git"
-    else
-        url="https://github.com/$REPO_NAME/$REPO_NAME.git"
+prepare_dir() {
+    local dir="$1"
+    if [ ! -d "$dir" ]; then
+        sudo mkdir -p "$dir"
+        sudo chown "$(whoami):$(whoami)" "$dir"
+        log "Создана директория $dir"
     fi
-    if [ -d "$REPO_DIR" ]; then
-        warn "Директория $REPO_DIR уже существует. Обновляю..."
-        cd "$REPO_DIR"
+}
+
+clone_repo() {
+    local url="https://github.com/$REPO_OWNER/$REPO_NAME.git"
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        warn "Репозиторий уже существует. Обновляю..."
+        cd "$INSTALL_DIR"
         git pull origin "$REPO_BRANCH" 2>/dev/null || true
     else
-        info "Клонирую репозиторий..."
-        git clone --depth 1 -b "$REPO_BRANCH" "$url" "$REPO_DIR"
-        cd "$REPO_DIR"
+        info "Клонирую репозиторий в $INSTALL_DIR ..."
+        git clone --depth 1 -b "$REPO_BRANCH" "$url" "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
     fi
 }
 
@@ -131,7 +136,7 @@ setup_systemd() {
     [[ ! "$ANS" =~ ^[Yy]$ ]] && return
 
     local svc="tik-tok-bot"
-    local dir="$(pwd)"
+    local dir="$INSTALL_DIR"
     local usr="${SUDO_USER:-$(whoami)}"
 
     sudo tee /etc/systemd/system/$svc.service > /dev/null << EOF
@@ -168,13 +173,19 @@ summary() {
     if grep -q "your_bot_token_here" .env 2>/dev/null; then
         warn "Не забудьте указать TELEGRAM_BOT_TOKEN в .env"
     fi
+    echo "  Директория: $INSTALL_DIR"
+    echo ""
     echo "  Запуск:"
-    echo "    cd $(pwd)"
+    echo "    cd $INSTALL_DIR"
     echo "    source venv/bin/activate"
     echo "    python main.py"
     echo ""
+    echo "  systemd (если настроен):"
+    echo "    sudo systemctl start tik-tok-bot"
+    echo "    sudo journalctl -u tik-tok-bot -f"
+    echo ""
     echo "  Docker:"
-    echo "    cd $(pwd)"
+    echo "    cd $INSTALL_DIR"
     echo "    docker build -t tik-tok-bot ."
     echo "    docker run --env-file .env tik-tok-bot"
     echo ""
@@ -191,10 +202,11 @@ main() {
     check_python
 
     if [ -n "$DETECTED_DIR" ]; then
-        info "Установка из локальной директории"
+        info "Установка из локальной директории: $DETECTED_DIR"
         cd "$DETECTED_DIR"
     else
-        header "Загрузка репозитория"
+        header "Подготовка $INSTALL_DIR"
+        prepare_dir "$INSTALL_DIR"
         clone_repo
     fi
 
