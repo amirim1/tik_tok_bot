@@ -120,6 +120,11 @@ clone_repo() {
         warn "Репозиторий уже существует. Обновляю..."
         cd "$INSTALL_DIR"
         git pull origin "$REPO_BRANCH" 2>/dev/null || true
+        # Если запущено через curl|bash, перезапускаем локальную копию
+        # (чтобы использовать свежеобновлённый install.sh)
+        if [ -z "$DETECTED_DIR" ]; then
+            exec bash "$INSTALL_DIR/install.sh"
+        fi
     else
         info "Клонирую репозиторий в $INSTALL_DIR ..."
         git clone --depth 1 -b "$REPO_BRANCH" "$url" "$INSTALL_DIR"
