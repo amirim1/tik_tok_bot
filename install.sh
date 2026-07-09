@@ -81,37 +81,28 @@ check_python() {
 }
 
 install_venv_if_needed() {
-    # Python 3.12+: ensurepip всегда импортируется, но wheel-файлы pip
-    # могут отсутствовать (отдельный пакет python3-venv в Ubuntu/Debian).
-    # Проверяем, может ли ensurepip реально работать.
-    if $PY -m pip --version &>/dev/null && $PY -m ensurepip --version &>/dev/null; then
-        return 0
-    fi
-
+    # В Ubuntu/Debian python3-venv — отдельный пакет. Без него
+    # ensurepip не может установить pip в venv (wheel-файлы отсутствуют).
     case "$OS_ID" in
         ubuntu|debian)
-            warn "pip/venv не найдены. Устанавливаю python3-venv..."
             local pkg
             pkg=$($PY -c "import sys; print(f'python3.{sys.version_info.minor}-venv')" 2>/dev/null || echo "python3-venv")
-            sudo apt-get install -y -qq "$pkg" || {
-                err "Выполните вручную: sudo apt install $pkg"
-                exit 1
-            }
-            # На Ubuntu 24.04 python3-venv тянет pip, но иногда нужен python3-pip
-            command -v pip3 &>/dev/null || sudo apt-get install -y -qq python3-pip || true
+            if ! dpkg -s "$pkg" &>/dev/null; then
+                info "Устанавливаю $pkg ..."
+                sudo apt-get install -y -qq "$pkg" || {
+                    err "Не удалось установить $pkg."
+                    err "Выполните: sudo apt install $pkg"
+                    exit 1
+                }
+            fi
             ;;
         centos|rhel|fedora|almalinux|rocky)
-            warn "pip/venv не найдены. Устанавливаю python3-venv..."
-            sudo $PM install -y python3-venv python3-pip || true
+            if ! rpm -q python3-venv &>/dev/null; then
+                info "Устанавливаю python3-venv..."
+                sudo $PM install -y python3-venv || true
+            fi
             ;;
     esac
-
-    if ! $PY -m pip --version &>/dev/null || ! $PY -m ensurepip --version &>/dev/null; then
-        err "pip/ensurepip всё ещё недоступны. Установите вручную:"
-        err "  sudo apt install python3-venv python3-pip"
-        exit 1
-    fi
-    log "python3-venv и pip установлены"
 }
 
 prepare_dir() {
