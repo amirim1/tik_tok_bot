@@ -128,7 +128,7 @@ clone_repo() {
 }
 
 setup_venv() {
-    if [ -f "venv/bin/python3" ]; then
+    if [ -f "venv/bin/python3" ] && [ -f "venv/bin/activate" ]; then
         info "Виртуальное окружение уже существует. Пропускаю."
         source venv/bin/activate
         return
