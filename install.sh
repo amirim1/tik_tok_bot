@@ -150,7 +150,21 @@ setup_venv() {
 }
 
 setup_env() {
-    [ -f ".env" ] && { warn ".env уже существует. Пропускаю."; return; }
+    if [ -f ".env" ]; then
+        # Очищаем inline-комментарии (systemd EnvironmentFile их не понимает)
+        if grep -q '#.*=' ".env"; then
+            warn "Очищаю inline-комментарии в .env..."
+            if [[ "$(uname -s)" == "Darwin" ]]; then
+                sed -i '' 's/[[:space:]]*#.*$//' ".env"
+                sed -i '' '/^[[:space:]]*$/d' ".env"
+            else
+                sed -i 's/[[:space:]]*#.*$//' ".env"
+                sed -i '/^[[:space:]]*$/d' ".env"
+            fi
+        fi
+        warn ".env уже существует. Пропускаю."
+        return
+    fi
     cp .env.example .env
     log ".env создан из .env.example"
 
