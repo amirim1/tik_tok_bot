@@ -37,6 +37,9 @@ detect_os() {
         Darwin*) OS="macos";;
         *) err "OS $(uname -s) не поддерживается"; exit 1;;
     esac
+    # Дефолты обязательны: на macOS /etc/os-release нет, а при set -u
+    # неинициализированные переменные уронят скрипт.
+    OS_ID="unknown"; OS_VERSION="unknown"
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         OS_ID="$ID"; OS_VERSION="$VERSION_ID"
@@ -71,6 +74,10 @@ check_python() {
     PY=$(command -v python3)
     VER=$($PY --version 2>&1 | cut -d' ' -f2)
     info "Python $VER"
+    if ! [[ "$VER" =~ ^[0-9]+\.[0-9]+ ]]; then
+        err "Не удалось определить версию Python ('$VER')"
+        exit 1
+    fi
     local maj=$(echo "$VER" | cut -d. -f1)
     local min=$(echo "$VER" | cut -d. -f2)
     if [ "$maj" -lt 3 ] || { [ "$maj" -eq 3 ] && [ "$min" -lt 8 ]; }; then
@@ -109,7 +116,7 @@ prepare_dir() {
     local dir="$1"
     if [ ! -d "$dir" ]; then
         sudo mkdir -p "$dir"
-        sudo chown "$(whoami):$(whoami)" "$dir"
+        sudo chown "$(id -un):$(id -gn)" "$dir"
         log "Создана директория $dir"
     fi
 }
@@ -119,7 +126,9 @@ clone_repo() {
     if [ -d "$INSTALL_DIR/.git" ]; then
         warn "Репозиторий уже существует. Обновляю..."
         cd "$INSTALL_DIR"
-        git pull origin "$REPO_BRANCH" 2>/dev/null || true
+        if ! git pull origin "$REPO_BRANCH"; then
+            warn "Не удалось обновить репозиторий (нет сети или есть локальные правки). Продолжаю с текущей версией."
+        fi
         # Если запущено через curl|bash, перезапускаем локальную копию
         # (чтобы использовать свежеобновлённый install.sh)
         if [ -z "$DETECTED_DIR" ]; then
@@ -134,8 +143,11 @@ clone_repo() {
 
 setup_venv() {
     if [ -f "venv/bin/python3" ] && [ -f "venv/bin/activate" ]; then
-        info "Виртуальное окружение уже существует. Пропускаю."
+        info "Виртуальное окружение уже существует."
         source venv/bin/activate
+        # Даже при обновлении кода зависимости нужно привести к requirements.txt
+        info "Обновляю зависимости..."
+        pip install -q -r requirements.txt
         return
     fi
     if [ -d "venv" ]; then
@@ -175,7 +187,8 @@ setup_env() {
     fi
 
     echo ""
-    read -p "Введите Telegram Bot Token (оставьте пустым, чтобы указать позже): " TOKEN_INPUT
+    # '|| ...' защищает от EOF при неинтерактивном запуске (CI/curl|bash)
+    read -p "Введите Telegram Bot Token (оставьте пустым, чтобы указать позже): " TOKEN_INPUT || TOKEN_INPUT=""
     if [ -n "$TOKEN_INPUT" ]; then
         if [[ "$(uname -s)" == "Darwin" ]]; then
             sed -i '' "s/your_bot_token_here/$TOKEN_INPUT/" .env
@@ -191,23 +204,24 @@ setup_env() {
 setup_systemd() {
     command -v systemctl &>/dev/null || return
     echo ""
-    read -p "Настроить автозапуск через systemd? (y/N): " ANS
+    read -p "Настроить автозапуск через systemd? (y/N): " ANS || ANS=""
     [[ ! "$ANS" =~ ^[Yy]$ ]] && return
 
     local svc="tik-tok-bot"
     local dir="$INSTALL_DIR"
-    local usr="${SUDO_USER:-$(whoami)}"
+    local usr="${SUDO_USER:-$(id -un)}"
 
     sudo tee /etc/systemd/system/$svc.service > /dev/null << EOF
 [Unit]
 Description=TikTok Downloader Bot
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 User=$usr
 WorkingDirectory=$dir
-ExecStart=$dir/venv/bin/python main.py
+ExecStart=$dir/venv/bin/python $dir/main.py
 Restart=always
 RestartSec=10
 EnvironmentFile=$dir/.env

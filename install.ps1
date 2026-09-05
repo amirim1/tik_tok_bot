@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     TikTok Downloader Bot — установка на Windows
 .DESCRIPTION
@@ -76,47 +76,68 @@ Write-OK "Git найден"
 
 # Клонирование
 Write-Step "Загрузка репозитория..."
-$repoUrl = if ($RepoOwner) { "https://github.com/$RepoOwner/$RepoName.git" } else { "https://github.com/$RepoName/$RepoName.git" }
+$repoUrl = "https://github.com/$RepoOwner/$RepoName.git"
 
 if (Test-Path $RepoDir) {
     Write-Warn "Директория $RepoDir уже существует. Обновляю..."
     Push-Location $RepoDir
-    git pull origin $Branch 2>$null
-    Pop-Location
+    try {
+        & git pull origin $Branch
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "Не удалось обновить репозиторий (нет сети или есть локальные правки). Продолжаю с текущей версией."
+        }
+    } finally {
+        Pop-Location
+    }
 } else {
-    git clone --depth 1 -b $Branch $repoUrl
-    if (-not $?) { Write-Err "Ошибка клонирования"; exit 1 }
+    & git clone --depth 1 -b $Branch $repoUrl
+    if ($LASTEXITCODE -ne 0) { Write-Err "Ошибка клонирования"; exit 1 }
 }
 Write-OK "Репозиторий загружен"
 
 # Виртуальное окружение
 Push-Location $RepoDir
-Write-Step "Создание виртуального окружения..."
-& $python -m venv venv
-.\venv\Scripts\Activate.ps1
-Write-Step "Установка зависимостей..."
-pip install -q -r requirements.txt
-Write-OK "Зависимости установлены"
+try {
+    Write-Step "Создание виртуального окружения..."
+    & $python -m venv venv
+    if ($LASTEXITCODE -ne 0) { Write-Err "Не удалось создать виртуальное окружение"; exit 1 }
 
-# .env
-if (-not (Test-Path ".env")) {
-    Copy-Item ".env.example" ".env"
-    Write-OK ".env создан из .env.example"
+    # Работаем через venv\Scripts\python.exe напрямую: активация Activate.ps1
+    # может быть запрещена политикой выполнения (Restricted).
+    $venvPython = Join-Path (Get-Location) "venv\Scripts\python.exe"
+    Write-Step "Установка зависимостей..."
+    & $venvPython -m pip install -q -r requirements.txt
+    if ($LASTEXITCODE -ne 0) { Write-Err "Не удалось установить зависимости"; exit 1 }
+    Write-OK "Зависимости установлены"
 
-    if ($Token) {
-        (Get-Content ".env") -replace "your_bot_token_here", $Token | Set-Content ".env"
-        Write-OK "Токен установлен из параметра"
-    } else {
-        $inputToken = Read-Host "Введите Telegram Bot Token (Enter чтобы пропустить)"
-        if ($inputToken) {
-            (Get-Content ".env") -replace "your_bot_token_here", $inputToken | Set-Content ".env"
-            Write-OK "Токен сохранён"
+    # .env
+    if (-not (Test-Path ".env")) {
+        Copy-Item ".env.example" ".env"
+        Write-OK ".env создан из .env.example"
+
+        # Читаем/пишем UTF-8 без BOM явно: PS 5.1 по умолчанию использует ANSI,
+        # что портит кириллические комментарии из .env.example.
+        $envPath = Join-Path (Get-Location) ".env"
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        if ($Token) {
+            $content = [System.IO.File]::ReadAllText($envPath, [System.Text.Encoding]::UTF8)
+            [System.IO.File]::WriteAllText($envPath, $content.Replace("your_bot_token_here", $Token), $utf8NoBom)
+            Write-OK "Токен установлен из параметра"
         } else {
-            Write-Warn "Токен не указан. Отредактируйте .env вручную."
+            $inputToken = Read-Host "Введите Telegram Bot Token (Enter чтобы пропустить)"
+            if ($inputToken) {
+                $content = [System.IO.File]::ReadAllText($envPath, [System.Text.Encoding]::UTF8)
+                [System.IO.File]::WriteAllText($envPath, $content.Replace("your_bot_token_here", $inputToken), $utf8NoBom)
+                Write-OK "Токен сохранён"
+            } else {
+                Write-Warn "Токен не указан. Отредактируйте .env вручную."
+            }
         }
+    } else {
+        Write-Warn ".env уже существует"
     }
-} else {
-    Write-Warn ".env уже существует"
+} finally {
+    Pop-Location
 }
 
 # Запуск
@@ -126,10 +147,11 @@ Write-Host "  Установка завершена!" -ForegroundColor Green
 Write-Host "=======================================" -ForegroundColor Green
 Write-Host ""
 $currentDir = (Get-Location).Path
-Write-Host "  Запуск:"
+Write-Host "  Запуск (без активации venv):"
 Write-Host "    cd $currentDir"
+Write-Host "    .\venv\Scripts\python.exe main.py"
+Write-Host ""
+Write-Host "  Или с активацией venv (если разрешена политика выполнения):"
 Write-Host "    .\venv\Scripts\Activate.ps1"
 Write-Host "    python main.py"
 Write-Host ""
-
-Pop-Location
