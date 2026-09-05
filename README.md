@@ -2,6 +2,10 @@
 
 Telegram бот для скачивания видео из TikTok, Instagram, YouTube, Twitter и других платформ.
 
+![CI](https://github.com/amirim1/tik_tok_bot/actions/workflows/ci.yml/badge.svg)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 ## Возможности
 
 | Возможность | Статус |
@@ -16,11 +20,14 @@ Telegram бот для скачивания видео из TikTok, Instagram, Y
 | Vimeo | ✅ |
 | VK | ✅ |
 | Ограничение доступа по user ID | ✅ |
-| Rate limit с персистентностью | ✅ |
-| Проверка контента (MP4 magic bytes) | ✅ |
+| Rate limit с персистентностью и автоочисткой | ✅ |
+| Проверка контента (MP4 magic bytes + схема URL) | ✅ |
+| Команда `/help` | ✅ |
+| Graceful shutdown (SIGTERM/SIGINT) | ✅ |
 | Автоустановка одной командой | ✅ |
-| Docker | ✅ |
+| Docker (non-root, .dockerignore) | ✅ |
 | systemd автозапуск | ✅ |
+| CI: ruff + pytest (Python 3.11/3.12) | ✅ |
 
 ## Быстрая установка (одной командой)
 
@@ -53,8 +60,10 @@ python main.py
 
 ```bash
 docker build -t tik-tok-bot .
-docker run --env-file .env tik-tok-bot
+docker run --init --env-file .env tik-tok-bot
 ```
+
+Флаг `--init` гарантирует быстрое и корректное завершение процесса (бот обрабатывает SIGTERM).
 
 ## systemd (автозапуск на сервере)
 
@@ -64,13 +73,14 @@ docker run --env-file .env tik-tok-bot
 sudo tee /etc/systemd/system/tik-tok-bot.service > /dev/null << EOF
 [Unit]
 Description=Downloader Bot
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 User=$(whoami)
 WorkingDirectory=$(pwd)
-ExecStart=$(pwd)/venv/bin/python main.py
+ExecStart=$(pwd)/venv/bin/python $(pwd)/main.py
 Restart=always
 RestartSec=10
 EnvironmentFile=$(pwd)/.env
@@ -97,7 +107,23 @@ sudo systemctl enable --now tik-tok-bot
 | `ALLOWED_USERS` | (пусто) | Ограничение доступа по ID |
 | `DOWNLOAD_TIMEOUT` | `30` | Таймаут загрузки (сек) |
 
+## Разработка
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .   # линт
+pytest         # тесты (62 шт.)
+```
+
 ## История версий
+
+См. [CHANGELOG.md](CHANGELOG.md).
+
+### v0.3 — Аудит и надёжность
+- Исправлено видео без звука для yt-dlp (muxed-формат вместо split-DASH)
+- URL-матчинг по hostname, проверка схемы `video_url`
+- CI (ruff + pytest), dev-зависимости, .dockerignore, non-root Docker
+- Graceful shutdown по SIGTERM, `/help`, автоочистка rate-limit
 
 ### v0.2 — Multi-service
 - Поддержка Instagram, YouTube, Twitter/X, Reddit, Facebook, Pinterest, Vimeo, VK

@@ -4,6 +4,7 @@ from datetime import datetime
 import requests
 import telebot
 
+import src
 from src.config import ALLOWED_USERS, MAX_FILE_SIZE, MAX_FILE_SIZE_MB, TEMP_DIR, TOKEN, logger
 from src.downloaders import close_all, get_downloader
 from src.utils import check_access, cleanup_old_files, is_safe_video_url, is_valid_mp4, rate_limit
@@ -215,7 +216,7 @@ def _request_shutdown(signum, frame):
 
 def main():
     logger.info("=" * 50)
-    logger.info("Starting Downloader Bot")
+    logger.info(f"Starting Downloader Bot v{src.__version__}")
     logger.info(f"Temp dir: {TEMP_DIR.absolute()}")
     logger.info(f"Max file size: {MAX_FILE_SIZE_MB}MB")
     if ALLOWED_USERS:
