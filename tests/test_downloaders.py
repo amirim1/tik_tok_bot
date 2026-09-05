@@ -1,5 +1,4 @@
-import pytest
-from src.downloaders import get_downloader, detect_service, SERVICE_DOWNLOADERS
+from src.downloaders import SERVICE_DOWNLOADERS, detect_service, get_downloader
 from src.downloaders.base import BaseDownloader
 from src.downloaders.tiktok import TikTokDownloader
 from src.downloaders.ytdlp import YtDlpDownloader
@@ -66,7 +65,7 @@ class TestGetDownloader:
 
 class TestDownloaderBase:
     def test_all_are_base(self):
-        for name, downloader, patterns in SERVICE_DOWNLOADERS:
+        for name, downloader, _patterns in SERVICE_DOWNLOADERS:
             assert isinstance(downloader, BaseDownloader), f"{name} is not BaseDownloader"
 
     def test_tiktok_has_apis(self):

@@ -5,7 +5,6 @@ import pytest
 
 import src.utils as utils
 from src.utils import rate_limit
-import src.utils as utils
 
 
 class FakeMessage:

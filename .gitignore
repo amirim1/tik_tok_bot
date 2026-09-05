@@ -25,3 +25,7 @@ temp_videos/*.mp4
 # OS
 .DS_Store
 Thumbs.db
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/

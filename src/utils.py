@@ -1,16 +1,12 @@
-import time
 import json
 import logging
 import threading
+import time
 from functools import wraps
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlparse
 
-from src.config import (
-    RATE_LIMIT_CALLS, RATE_LIMIT_WINDOW, RATE_LIMIT_FILE,
-    TEMP_DIR, ALLOWED_USERS
-)
+from src.config import ALLOWED_USERS, RATE_LIMIT_CALLS, RATE_LIMIT_FILE, RATE_LIMIT_WINDOW, TEMP_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +16,7 @@ _user_requests = {}
 
 def _load_requests() -> dict:
     try:
-        with open(RATE_LIMIT_FILE, 'r') as f:
+        with open(RATE_LIMIT_FILE) as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
@@ -93,7 +89,7 @@ SERVICE_DOMAINS: dict[str, list[str]] = {
 }
 
 
-def extract_hostname(url) -> Optional[str]:
+def extract_hostname(url) -> str | None:
     """Hostname ссылки; ссылкам без схемы подставляется https://."""
     if not url or not isinstance(url, str):
         return None
@@ -107,7 +103,7 @@ def extract_hostname(url) -> Optional[str]:
     return hostname.lower() if hostname else None
 
 
-def match_service(url) -> Optional[str]:
+def match_service(url) -> str | None:
     """Имя сервиса по ссылке или None, если домен не поддерживается."""
     hostname = extract_hostname(url)
     if not hostname:

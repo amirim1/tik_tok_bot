@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from src.downloaders.base import BaseDownloader
 from src.downloaders.tiktok import TikTokDownloader
@@ -28,7 +27,7 @@ SERVICE_DOWNLOADERS: list[tuple[str, BaseDownloader, list[str]]] = [
 ]
 
 
-def detect_service(url: str) -> Optional[str]:
+def detect_service(url: str) -> str | None:
     return match_service(url)
 
 

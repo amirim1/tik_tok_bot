@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict
 
 
 class BaseDownloader(ABC):
     @abstractmethod
-    def get_video(self, url: str) -> Optional[Dict]:
+    def get_video(self, url: str) -> dict | None:
         ...
 
-    def close(self):
+    def close(self):  # noqa: B027 - опциональный метод
         pass

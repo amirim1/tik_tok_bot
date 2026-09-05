@@ -1,11 +1,10 @@
-import time
 import logging
-from typing import Optional, Dict
+import time
 
 import requests
 from bs4 import BeautifulSoup
 
-from src.config import MAX_DOWNLOAD_RETRIES, DOWNLOAD_TIMEOUT
+from src.config import DOWNLOAD_TIMEOUT, MAX_DOWNLOAD_RETRIES
 from src.downloaders.base import BaseDownloader
 
 logger = logging.getLogger(__name__)
@@ -28,7 +27,7 @@ class TikTokDownloader(BaseDownloader):
             )
         })
 
-    def _api_tiklydown(self, url: str) -> Optional[Dict]:
+    def _api_tiklydown(self, url: str) -> dict | None:
         try:
             r = self.session.get(
                 "https://api.tiklydown.eu.org/api/download",
@@ -47,7 +46,7 @@ class TikTokDownloader(BaseDownloader):
             logger.warning(f"tiklydown failed: {e}")
         return None
 
-    def _api_tikwm(self, url: str) -> Optional[Dict]:
+    def _api_tikwm(self, url: str) -> dict | None:
         try:
             r = self.session.get(
                 "https://www.tikwm.com/api/",
@@ -67,7 +66,7 @@ class TikTokDownloader(BaseDownloader):
             logger.warning(f"tikwm failed: {e}")
         return None
 
-    def _api_snaptik(self, url: str) -> Optional[Dict]:
+    def _api_snaptik(self, url: str) -> dict | None:
         try:
             r = self.session.post(
                 "https://snaptik.app/abc2.php",
@@ -101,7 +100,7 @@ class TikTokDownloader(BaseDownloader):
             logger.warning(f"snaptik failed: {e}")
         return None
 
-    def get_video(self, url: str) -> Optional[Dict]:
+    def get_video(self, url: str) -> dict | None:
         for api_method in self.apis:
             for attempt in range(self.max_retries):
                 try:

@@ -1,5 +1,4 @@
 import logging
-from typing import Optional, Dict
 
 import yt_dlp
 
@@ -22,7 +21,7 @@ class YtDlpDownloader(BaseDownloader):
             'no_color': True,
         }
 
-    def get_video(self, url: str) -> Optional[Dict]:
+    def get_video(self, url: str) -> dict | None:
         try:
             with yt_dlp.YoutubeDL(self._opts) as ydl:
                 info = ydl.extract_info(url, download=False)

@@ -1,5 +1,11 @@
-import pytest
-from src.utils import validate_url, is_valid_mp4, check_access, is_safe_video_url, match_service, extract_hostname
+from src.utils import (
+    check_access,
+    extract_hostname,
+    is_safe_video_url,
+    is_valid_mp4,
+    match_service,
+    validate_url,
+)
 
 
 class TestValidateUrl:
