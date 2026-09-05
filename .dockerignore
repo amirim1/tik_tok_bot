@@ -1,0 +1,16 @@
+# Секреты и локальные артефакты не должны попадать в контекст сборки:
+# COPY . . в противном случае запечёт .env с токеном в слой образа.
+.env
+.git
+.gitignore
+.gitattributes
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+temp_videos/
+rate_limit.json
+*.log
+.DS_Store
+Thumbs.db
