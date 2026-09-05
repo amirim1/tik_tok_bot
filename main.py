@@ -1,10 +1,11 @@
+import signal
 import telebot
 import requests
 from datetime import datetime
 
 from src.config import TOKEN, TEMP_DIR, MAX_FILE_SIZE, MAX_FILE_SIZE_MB, ALLOWED_USERS, logger
-from src.downloaders import get_downloader, detect_service, close_all
-from src.utils import rate_limit, validate_url, check_access, is_valid_mp4, cleanup_old_files
+from src.downloaders import get_downloader, close_all
+from src.utils import rate_limit, check_access, is_valid_mp4, is_safe_video_url, cleanup_old_files
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -12,6 +13,22 @@ SUPPORTED_SERVICES = [
     "TikTok", "Instagram (Reels, посты)", "YouTube / YouTube Shorts",
     "Twitter / X", "Reddit", "Facebook", "Pinterest", "Vimeo",
 ]
+
+HELP_TEXT = (
+    "*Советы:*\n"
+    "1. Скопируйте ссылку через 'Поделиться'\n"
+    "2. Убедитесь, что видео публичное\n"
+    "3. Отправьте ссылку боту\n"
+    "4. Если не работает — попробуйте другую ссылку"
+)
+
+
+def safe_edit(chat_id, message_id, text, **kwargs):
+    """Редактирование статус-сообщения без падения, если оно уже удалено/не изменилось."""
+    try:
+        bot.edit_message_text(text, chat_id, message_id, **kwargs)
+    except telebot.apihelper.ApiTelegramException as e:
+        logger.debug(f"edit_message_text ignored: {e}")
 
 
 @bot.message_handler(commands=['start'])
@@ -35,6 +52,11 @@ def start(message):
     )
 
 
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.send_message(message.chat.id, HELP_TEXT, parse_mode='Markdown')
+
+
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     bot.answer_callback_query(call.id)
@@ -47,15 +69,7 @@ def callback_handler(call):
             parse_mode='Markdown',
         )
     elif call.data == "help":
-        bot.send_message(
-            call.message.chat.id,
-            "*Советы:*\n"
-            "1. Скопируйте ссылку через 'Поделиться'\n"
-            "2. Убедитесь, что видео публичное\n"
-            "3. Отправьте ссылку боту\n"
-            "4. Если не работает — попробуйте другую ссылку",
-            parse_mode='Markdown',
-        )
+        bot.send_message(call.message.chat.id, HELP_TEXT, parse_mode='Markdown')
 
 
 @bot.message_handler(func=lambda m: True)
@@ -65,22 +79,19 @@ def handle_video_request(message):
         bot.reply_to(message, "У вас нет доступа к этому боту.")
         return
 
-    url = message.text.strip()
+    if not message.text:
+        return
 
-    if not validate_url(url):
-        service = detect_service(url)
-        if not service:
-            bot.reply_to(
-                message,
-                "Эта платформа пока не поддерживается.\n\n"
-                "Поддерживаемые платформы:\n" +
-                "\n".join(f"• {s}" for s in SUPPORTED_SERVICES),
-            )
-            return
+    url = message.text.strip()
 
     downloader, service_name = get_downloader(url)
     if not downloader:
-        bot.reply_to(message, "Не удалось определить тип ссылки.")
+        bot.reply_to(
+            message,
+            "Эта платформа пока не поддерживается.\n\n"
+            "Поддерживаемые платформы:\n" +
+            "\n".join(f"• {s}" for s in SUPPORTED_SERVICES),
+        )
         return
 
     status_msg = bot.reply_to(message, "*Обрабатываю запрос...*", parse_mode='Markdown')
@@ -90,21 +101,20 @@ def handle_video_request(message):
         logger.info(f"Request from {message.from_user.id} [{service_name}]: {url}")
         video_info = downloader.get_video(url)
 
-        if not video_info:
-            bot.edit_message_text(
+        if not video_info or not is_safe_video_url(video_info.get("video_url")):
+            safe_edit(
+                message.chat.id, status_msg.message_id,
                 "Не удалось получить видео.\n\n"
                 "Возможные причины:\n"
                 "• Видео недоступно или удалено\n"
                 "• Видео приватное\n"
                 "• Временные проблемы с сервисом",
-                message.chat.id, status_msg.message_id,
             )
             return
 
-        bot.edit_message_text(
-            "*Загружаю видео...*",
+        safe_edit(
             message.chat.id, status_msg.message_id,
-            parse_mode='Markdown',
+            "*Загружаю видео...*", parse_mode='Markdown',
         )
 
         vr = requests.get(video_info["video_url"], stream=True, timeout=30)
@@ -112,10 +122,10 @@ def handle_video_request(message):
 
         cl = vr.headers.get('content-length')
         if cl and int(cl) > MAX_FILE_SIZE:
-            bot.edit_message_text(
+            safe_edit(
+                message.chat.id, status_msg.message_id,
                 f"Видео слишком большое ({int(cl) // (1024 * 1024)}MB). "
                 f"Максимум: {MAX_FILE_SIZE_MB}MB",
-                message.chat.id, status_msg.message_id,
             )
             return
 
@@ -129,28 +139,26 @@ def handle_video_request(message):
                     f.write(chunk)
                     downloaded += len(chunk)
                     if downloaded > MAX_FILE_SIZE:
-                        f.close()
                         video_path.unlink(missing_ok=True)
                         video_path = None
-                        bot.edit_message_text(
-                            f"Видео превышает {MAX_FILE_SIZE_MB}MB",
+                        safe_edit(
                             message.chat.id, status_msg.message_id,
+                            f"Видео превышает {MAX_FILE_SIZE_MB}MB",
                         )
                         return
 
         if not is_valid_mp4(video_path):
             video_path.unlink(missing_ok=True)
             video_path = None
-            bot.edit_message_text(
-                "Получен некорректный файл. Попробуйте другую ссылку.",
+            safe_edit(
                 message.chat.id, status_msg.message_id,
+                "Получен некорректный файл. Попробуйте другую ссылку.",
             )
             return
 
-        bot.edit_message_text(
-            "*Отправляю видео...*",
+        safe_edit(
             message.chat.id, status_msg.message_id,
-            parse_mode='Markdown',
+            "*Отправляю видео...*", parse_mode='Markdown',
         )
 
         with open(video_path, 'rb') as vf:
@@ -177,19 +185,19 @@ def handle_video_request(message):
 
     except requests.exceptions.Timeout:
         logger.error(f"Timeout: {url}")
-        bot.edit_message_text("Превышено время ожидания.", message.chat.id, status_msg.message_id)
+        safe_edit(message.chat.id, status_msg.message_id, "Превышено время ожидания.")
     except requests.exceptions.RequestException as e:
         logger.error(f"Download error: {e}")
-        bot.edit_message_text("Ошибка загрузки. Попробуйте другую ссылку.", message.chat.id, status_msg.message_id)
+        safe_edit(message.chat.id, status_msg.message_id, "Ошибка загрузки. Попробуйте другую ссылку.")
     except telebot.apihelper.ApiTelegramException as e:
         logger.error(f"Telegram API error: {e}")
-        bot.edit_message_text("Ошибка отправки. Возможно, файл слишком большой.", message.chat.id, status_msg.message_id)
+        safe_edit(
+            message.chat.id, status_msg.message_id,
+            "Ошибка отправки. Возможно, файл слишком большой.",
+        )
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
-        try:
-            bot.edit_message_text("Произошла ошибка.", message.chat.id, status_msg.message_id)
-        except Exception:
-            pass
+        safe_edit(message.chat.id, status_msg.message_id, "Произошла ошибка.")
     finally:
         if video_path and video_path.exists():
             try:
@@ -197,6 +205,11 @@ def handle_video_request(message):
             except Exception as e:
                 logger.error(f"Error deleting {video_path}: {e}")
         cleanup_old_files()
+
+
+def _request_shutdown(signum, frame):
+    logger.info(f"Received signal {signum}, shutting down...")
+    raise KeyboardInterrupt
 
 
 def main():
@@ -215,6 +228,8 @@ def main():
     except Exception as e:
         logger.error(f"Bot authorization failed: {e}")
         return
+
+    signal.signal(signal.SIGTERM, _request_shutdown)
 
     cleanup_old_files(max_age_minutes=1)
 

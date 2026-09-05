@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 
 class YtDlpDownloader(BaseDownloader):
     def __init__(self):
+        # Только одиночные (muxed) форматы: бот скачивает один прямой URL,
+        # поэтому split-форматы (bestvideo+bestaudio) дали бы видео без звука.
         self._opts = {
-            'format': (
-                f'bestvideo[filesize<{MAX_FILE_SIZE}]+bestaudio/'
-                f'best[filesize<{MAX_FILE_SIZE}]/best'
-            ),
+            'format': f'b[filesize<{MAX_FILE_SIZE}]/b',
+            'format_sort': ['proto:https', 'ext:mp4:m4a'],
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
@@ -33,8 +33,6 @@ class YtDlpDownloader(BaseDownloader):
 
             if info.get('url'):
                 video_url = info['url']
-            elif info.get('requested_formats'):
-                video_url = info['requested_formats'][0].get('url', info.get('url'))
             elif info.get('formats'):
                 best = sorted(
                     [f for f in info['formats'] if f.get('url') and f.get('ext') in ('mp4', 'mov', 'webm')],

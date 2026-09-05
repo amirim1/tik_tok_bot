@@ -1,10 +1,11 @@
 import time
 import json
-import re
 import logging
 import threading
 from functools import wraps
 from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
 
 from src.config import (
     RATE_LIMIT_CALLS, RATE_LIMIT_WINDOW, RATE_LIMIT_FILE,
@@ -36,6 +37,16 @@ def _save_requests(data: dict):
 _user_requests.update(_load_requests())
 
 
+def _prune_stale(now: float, window: int):
+    """Удаляет протухшие записи всех пользователей, чтобы файл персистентности не рос бесконечно."""
+    for uid in list(_user_requests):
+        fresh = [t for t in _user_requests[uid] if now - t < window]
+        if fresh:
+            _user_requests[uid] = fresh
+        else:
+            del _user_requests[uid]
+
+
 def rate_limit(bot_instance, max_calls=None, time_window=None):
     if max_calls is None:
         max_calls = RATE_LIMIT_CALLS
@@ -49,20 +60,16 @@ def rate_limit(bot_instance, max_calls=None, time_window=None):
             now = time.time()
 
             with _lock:
-                if user_id not in _user_requests:
-                    _user_requests[user_id] = []
-                _user_requests[user_id] = [
-                    t for t in _user_requests[user_id] if now - t < time_window
-                ]
+                _prune_stale(now, time_window)
 
-                if len(_user_requests[user_id]) >= max_calls:
+                if len(_user_requests.get(user_id, [])) >= max_calls:
                     bot_instance.reply_to(
                         message,
                         f"Превышен лимит запросов. Попробуйте через {time_window} сек."
                     )
                     return
 
-                _user_requests[user_id].append(now)
+                _user_requests.setdefault(user_id, []).append(now)
                 _save_requests(_user_requests)
 
             return func(message, *args, **kwargs)
@@ -70,34 +77,50 @@ def rate_limit(bot_instance, max_calls=None, time_window=None):
     return decorator
 
 
-URL_PATTERNS = {
-    "tiktok": [
-        r'https?://(?:www\.)?tiktok\.com/@[\w.-]+/video/\d+',
-        r'https?://(?:vm|vt)\.tiktok\.com/[\w-]+',
-        r'https?://(?:m\.)?tiktok\.com/v/\d+',
-    ],
+# Единый реестр поддерживаемых доменов. Совпадение проверяется по hostname:
+# hostname == domain или hostname.endswith("." + domain) — точечное совпадение
+# вместо поиска подстроки, чтобы "notvk.com/video" не считался vk-ссылкой.
+SERVICE_DOMAINS: dict[str, list[str]] = {
+    "tiktok": ["tiktok.com"],
+    "instagram": ["instagram.com", "instagr.am"],
+    "youtube": ["youtube.com", "youtu.be"],
+    "twitter": ["twitter.com", "x.com"],
+    "reddit": ["reddit.com", "redd.it"],
+    "facebook": ["facebook.com", "fb.watch", "fb.com"],
+    "pinterest": ["pinterest.com", "pin.it"],
+    "vimeo": ["vimeo.com"],
+    "vk": ["vk.com"],
 }
 
-YTDLP_DOMAINS = [
-    "instagram.com", "instagr.am",
-    "youtube.com", "youtu.be",
-    "twitter.com", "x.com",
-    "reddit.com", "redd.it",
-    "facebook.com", "fb.watch", "fb.com",
-    "pinterest.com", "pin.it",
-    "vimeo.com",
-    "vk.com",
-]
+
+def extract_hostname(url) -> Optional[str]:
+    """Hostname ссылки; ссылкам без схемы подставляется https://."""
+    if not url or not isinstance(url, str):
+        return None
+    candidate = url.strip()
+    if "://" not in candidate:
+        candidate = "https://" + candidate
+    try:
+        hostname = urlparse(candidate).hostname
+    except ValueError:
+        return None
+    return hostname.lower() if hostname else None
+
+
+def match_service(url) -> Optional[str]:
+    """Имя сервиса по ссылке или None, если домен не поддерживается."""
+    hostname = extract_hostname(url)
+    if not hostname:
+        return None
+    for name, domains in SERVICE_DOMAINS.items():
+        for d in domains:
+            if hostname == d or hostname.endswith("." + d):
+                return name
+    return None
 
 
 def validate_url(url: str) -> bool:
-    for patterns in URL_PATTERNS.values():
-        if any(re.match(p, url) for p in patterns):
-            return True
-    for domain in YTDLP_DOMAINS:
-        if domain in url:
-            return True
-    return False
+    return match_service(url) is not None
 
 
 def check_access(user_id: int) -> bool:
@@ -113,6 +136,17 @@ def is_valid_mp4(file_path) -> bool:
         return len(header) >= 12 and header[4:8] == b'ftyp'
     except Exception:
         return False
+
+
+def is_safe_video_url(url) -> bool:
+    """video_url приходит из сторонних API — разрешаем только прямые http(s)-ссылки."""
+    if not url or not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
 def cleanup_old_files(max_age_minutes: int = 5):

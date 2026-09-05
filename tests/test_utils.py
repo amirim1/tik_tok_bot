@@ -1,5 +1,5 @@
 import pytest
-from src.utils import validate_url, is_valid_mp4, check_access
+from src.utils import validate_url, is_valid_mp4, check_access, is_safe_video_url, match_service, extract_hostname
 
 
 class TestValidateUrl:
@@ -58,6 +58,51 @@ class TestValidateUrl:
 
     def test_invalid_empty(self):
         assert not validate_url("")
+
+    def test_no_substring_false_positive(self):
+        # Домен должен совпадать по hostname, а не по подстроке в URL
+        assert not validate_url("https://evil.com/?url=https://tiktok.com/@a/video/1")
+        assert not validate_url("https://notvk.com/video123")
+        assert not validate_url("https://tiktok.com.evil.com/video")
+
+    def test_schemeless_url(self):
+        assert validate_url("tiktok.com/@user/video/1234567890123456789")
+        assert validate_url("youtu.be/dQw4w9WgXcQ")
+
+    def test_hostname_must_be_str(self):
+        assert not validate_url(None)
+        assert not validate_url("")
+
+    def test_match_service_names(self):
+        assert match_service("https://www.tiktok.com/@u/video/1") == "tiktok"
+        assert match_service("https://x.com/u/status/1") == "twitter"
+        assert match_service("https://fb.watch/abc") == "facebook"
+        assert match_service("https://example.com") is None
+
+    def test_extract_hostname(self):
+        assert extract_hostname("https://WWW.TikTok.com/@u/video/1") == "www.tiktok.com"
+        assert extract_hostname("tiktok.com/@u/video/1") == "tiktok.com"
+        assert extract_hostname("https://") is None
+        assert extract_hostname(None) is None
+
+
+class TestIsSafeVideoUrl:
+    def test_https(self):
+        assert is_safe_video_url("https://cdn.example.com/video.mp4")
+
+    def test_http(self):
+        assert is_safe_video_url("http://cdn.example.com/video.mp4")
+
+    def test_other_schemes_blocked(self):
+        assert not is_safe_video_url("file:///etc/passwd")
+        assert not is_safe_video_url("ftp://example.com/video.mp4")
+        assert not is_safe_video_url("data:text/html,hi")
+
+    def test_invalid_values(self):
+        assert not is_safe_video_url(None)
+        assert not is_safe_video_url("")
+        assert not is_safe_video_url("https://")
+        assert not is_safe_video_url(12345)
 
 
 class TestIsValidMp4:

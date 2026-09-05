@@ -37,6 +37,10 @@ class TestDetectService:
     def test_unknown(self):
         assert detect_service("https://example.com/video") is None
 
+    def test_no_substring_false_positive(self):
+        assert detect_service("https://evil.com/?u=https://vk.com/video-1_2") is None
+        assert detect_service("https://myvimeo.com.evil.example/123") is None
+
 
 class TestGetDownloader:
     def test_tiktok(self):
@@ -79,3 +83,14 @@ class TestYtDlpDownloader:
     def test_init(self):
         d = YtDlpDownloader()
         assert d._opts is not None
+
+    def test_format_is_single_muxed_stream(self):
+        # Регрессия: split-формат (bestvideo+bestaudio) давал видео без звука,
+        # т.к. бот скачивает один прямой URL.
+        d = YtDlpDownloader()
+        assert "+" not in d._opts["format"]
+        assert "bestvideo" not in d._opts["format"]
+
+    def test_format_respects_max_file_size(self):
+        d = YtDlpDownloader()
+        assert "filesize<" in d._opts["format"]
