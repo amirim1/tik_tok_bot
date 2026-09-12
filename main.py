@@ -84,6 +84,24 @@ def help_command(message):
     bot.send_message(message.chat.id, HELP_TEXT, parse_mode='Markdown')
 
 
+def format_whitelist_user(user_id: int) -> str:
+    """Форматирует запись whitelist с данными, доступными боту в Telegram."""
+    try:
+        chat = bot.get_chat(user_id)
+    except Exception as e:
+        logger.debug(f"Unable to resolve Telegram profile for {user_id}: {e}")
+        return str(user_id)
+
+    username = getattr(chat, "username", None)
+    if username:
+        return f"{user_id} — @{username}"
+
+    display_name = " ".join(
+        part for part in (getattr(chat, "first_name", None), getattr(chat, "last_name", None)) if part
+    )
+    return f"{user_id} — {display_name}" if display_name else str(user_id)
+
+
 @bot.message_handler(commands=['access'])
 def access_command(message):
     """Управление whitelist: /access add|remove <telegram_user_id>, /access list."""
@@ -94,7 +112,7 @@ def access_command(message):
     parts = (message.text or "").split()
     if len(parts) == 2 and parts[1].lower() == "list":
         allowed_users = list_allowed_users()
-        users = "\n".join(str(user_id) for user_id in allowed_users)
+        users = "\n".join(format_whitelist_user(user_id) for user_id in allowed_users)
         bot.reply_to(message, f"Whitelist ({len(allowed_users)}):\n{users}")
         return
 

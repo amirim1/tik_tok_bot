@@ -3,7 +3,7 @@
 Telegram бот для скачивания видео из TikTok, Instagram, YouTube, Twitter и других платформ.
 
 ![CI](https://github.com/amirim1/tik_tok_bot/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Возможности
@@ -19,7 +19,7 @@ Telegram бот для скачивания видео из TikTok, Instagram, Y
 | Pinterest | ✅ |
 | Vimeo | ✅ |
 | VK | ✅ |
-| Ограничение доступа по user ID | ✅ |
+| Whitelist и управление доступом из Telegram | ✅ |
 | Rate limit с персистентностью и автоочисткой | ✅ |
 | Проверка контента (MP4 magic bytes + схема URL) | ✅ |
 | Команда `/help` | ✅ |
@@ -104,8 +104,22 @@ sudo systemctl enable --now tik-tok-bot
 | `MAX_FILE_SIZE_MB` | `50` | Максимальный размер видео |
 | `RATE_LIMIT_CALLS` | `5` | Лимит запросов на пользователя |
 | `RATE_LIMIT_WINDOW` | `60` | Окно лимита (сек) |
-| `ALLOWED_USERS` | (пусто) | Ограничение доступа по ID |
+| `ADMIN_USER_ID` | — | **Обязательно.** Telegram ID администратора (только в закрытом `.env`) |
+| `ALLOWED_USERS` | (пусто) | Начальные ID whitelist для первого запуска |
+| `ALLOWED_USERS_FILE` | `allowed_users.json` | Хранилище текущего whitelist, не попадает в Git |
 | `DOWNLOAD_TIMEOUT` | `30` | Таймаут загрузки (сек) |
+
+## Управление доступом
+
+Только администратор может изменять whitelist прямо в личном чате с ботом:
+
+```text
+/access add 123456789
+/access remove 123456789
+/access list
+```
+
+В `/access list` бот выводит ID и `@username`, если Telegram предоставляет его для этого чата; иначе показывает имя или только ID.
 
 ## Разработка
 
@@ -118,6 +132,10 @@ pytest         # тесты (62 шт.)
 ## История версий
 
 См. [CHANGELOG.md](CHANGELOG.md).
+
+### v0.4 — Whitelist и устойчивый TikTok
+- Управление whitelist командой `/access`, вывод username в списке
+- TikTok через yt-dlp с browser impersonation и CDN cookies
 
 ### v0.3 — Аудит и надёжность
 - Исправлено видео без звука для yt-dlp (muxed-формат вместо split-DASH)

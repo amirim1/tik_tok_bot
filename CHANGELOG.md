@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4 — Whitelist и устойчивый TikTok (2026-09-13)
+
+### Новое
+- Постоянный whitelist пользователей с закрытым `ADMIN_USER_ID` в `.env` и командами администратора: `/access add`, `/access remove`, `/access list`.
+- В `/access list` выводятся Telegram ID и `@username`; при отсутствии username — имя или ID.
+
+### Исправления
+- TikTok: `yt-dlp` стал основным обработчиком; добавлены browser impersonation (`curl-cffi`) и cookies/headers для доступа к CDN.
+- Прямое скачивание использует настроенный `DOWNLOAD_TIMEOUT`.
+
 ## v0.3 — Аудит и надёжность (2026-09-05)
 
 ### Исправления
