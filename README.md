@@ -3,7 +3,7 @@
 Telegram бот для скачивания видео из TikTok, Instagram, YouTube, Twitter и других платформ.
 
 ![CI](https://github.com/amirim1/tik_tok_bot/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Возможности
@@ -132,6 +132,9 @@ pytest         # тесты (62 шт.)
 ## История версий
 
 См. [CHANGELOG.md](CHANGELOG.md).
+
+### v0.4.1 — Исправление CI
+- Исправлен формат тестового Telegram-токена для новых версий `pyTelegramBotAPI`
 
 ### v0.4 — Whitelist и устойчивый TikTok
 - Управление whitelist командой `/access`, вывод username в списке
