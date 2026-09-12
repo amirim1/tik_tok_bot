@@ -1,9 +1,13 @@
 from src.utils import (
     check_access,
     extract_hostname,
+    grant_access,
+    is_admin,
     is_safe_video_url,
     is_valid_mp4,
+    list_allowed_users,
     match_service,
+    revoke_access,
     validate_url,
 )
 
@@ -129,14 +133,26 @@ class TestIsValidMp4:
 
 
 class TestCheckAccess:
-    def test_no_restrictions(self, monkeypatch):
-        monkeypatch.setattr("src.utils.ALLOWED_USERS", [])
-        assert check_access(123)
+    def test_admin_is_allowed(self, monkeypatch):
+        monkeypatch.setattr("src.utils.ADMIN_USER_ID", 999)
+        monkeypatch.setattr("src.utils._allowed_user_ids", {999})
+        assert is_admin(999)
+        assert check_access(999)
 
-    def test_allowed_user(self, monkeypatch):
-        monkeypatch.setattr("src.utils.ALLOWED_USERS", [123, 456])
-        assert check_access(123)
+    def test_denies_user_not_on_whitelist(self, monkeypatch):
+        monkeypatch.setattr("src.utils._allowed_user_ids", {999})
+        assert not check_access(123)
 
-    def test_denied_user(self, monkeypatch):
-        monkeypatch.setattr("src.utils.ALLOWED_USERS", [123, 456])
-        assert not check_access(789)
+    def test_grant_and_revoke_access(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.utils.ADMIN_USER_ID", 999)
+        monkeypatch.setattr("src.utils.ALLOWED_USERS_FILE", str(tmp_path / "allowed_users.json"))
+        monkeypatch.setattr("src.utils._allowed_user_ids", {999})
+
+        assert grant_access(123)
+        assert check_access(123)
+        assert not grant_access(123)
+        assert list_allowed_users() == [123, 999]
+        assert revoke_access(123)
+        assert not check_access(123)
+        assert not revoke_access(999)
+        assert check_access(999)

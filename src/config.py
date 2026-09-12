@@ -37,5 +37,13 @@ RATE_LIMIT_FILE = os.getenv("RATE_LIMIT_FILE", "rate_limit.json")
 ALLOWED_USERS_RAW = os.getenv("ALLOWED_USERS", "")
 ALLOWED_USERS = [int(x.strip()) for x in ALLOWED_USERS_RAW.split(",") if x.strip()] if ALLOWED_USERS_RAW else []
 
+ADMIN_USER_ID_RAW = os.getenv("ADMIN_USER_ID", "").strip()
+if not ADMIN_USER_ID_RAW.isdigit():
+    logger.error("ADMIN_USER_ID must be set to a numeric Telegram user ID")
+    exit(1)
+ADMIN_USER_ID = int(ADMIN_USER_ID_RAW)
+
+ALLOWED_USERS_FILE = os.getenv("ALLOWED_USERS_FILE", "allowed_users.json")
+
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT", "30"))
 MAX_DOWNLOAD_RETRIES = int(os.getenv("MAX_DOWNLOAD_RETRIES", "2"))

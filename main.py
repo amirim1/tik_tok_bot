@@ -6,7 +6,7 @@ import telebot
 
 import src
 from src.config import (
-    ALLOWED_USERS,
+    ADMIN_USER_ID,
     DOWNLOAD_TIMEOUT,
     MAX_FILE_SIZE,
     MAX_FILE_SIZE_MB,
@@ -15,7 +15,17 @@ from src.config import (
     logger,
 )
 from src.downloaders import close_all, get_downloader
-from src.utils import check_access, cleanup_old_files, is_safe_video_url, is_valid_mp4, rate_limit
+from src.utils import (
+    check_access,
+    cleanup_old_files,
+    grant_access,
+    is_admin,
+    is_safe_video_url,
+    is_valid_mp4,
+    list_allowed_users,
+    rate_limit,
+    revoke_access,
+)
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -43,6 +53,10 @@ def safe_edit(chat_id, message_id, text, **kwargs):
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    if not check_access(message.from_user.id):
+        bot.reply_to(message, "У вас нет доступа к этому боту.")
+        return
+
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(
         telebot.types.InlineKeyboardButton("Список сервисов", callback_data="services"),
@@ -64,11 +78,66 @@ def start(message):
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
+    if not check_access(message.from_user.id):
+        bot.reply_to(message, "У вас нет доступа к этому боту.")
+        return
     bot.send_message(message.chat.id, HELP_TEXT, parse_mode='Markdown')
+
+
+@bot.message_handler(commands=['access'])
+def access_command(message):
+    """Управление whitelist: /access add|remove <telegram_user_id>, /access list."""
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "Эта команда доступна только администратору.")
+        return
+
+    parts = (message.text or "").split()
+    if len(parts) == 2 and parts[1].lower() == "list":
+        allowed_users = list_allowed_users()
+        users = "\n".join(str(user_id) for user_id in allowed_users)
+        bot.reply_to(message, f"Whitelist ({len(allowed_users)}):\n{users}")
+        return
+
+    if len(parts) != 3 or parts[1].lower() not in {"add", "remove"}:
+        bot.reply_to(
+            message,
+            "Использование:\n"
+            "/access add <telegram_user_id>\n"
+            "/access remove <telegram_user_id>\n"
+            "/access list",
+        )
+        return
+
+    action, user_id_raw = parts[1].lower(), parts[2]
+    try:
+        user_id = int(user_id_raw)
+    except ValueError:
+        bot.reply_to(message, "Telegram user ID должен быть числом.")
+        return
+    if user_id <= 0:
+        bot.reply_to(message, "Telegram user ID должен быть положительным числом.")
+        return
+
+    if action == "add":
+        if grant_access(user_id):
+            bot.reply_to(message, f"Доступ для {user_id} добавлен.")
+        else:
+            bot.reply_to(message, f"У {user_id} уже есть доступ.")
+        return
+
+    if user_id == ADMIN_USER_ID:
+        bot.reply_to(message, "Нельзя удалить администратора из whitelist.")
+    elif revoke_access(user_id):
+        bot.reply_to(message, f"Доступ для {user_id} удалён.")
+    else:
+        bot.reply_to(message, f"У {user_id} нет доступа.")
 
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
+    if not check_access(call.from_user.id):
+        bot.answer_callback_query(call.id, "У вас нет доступа к этому боту.", show_alert=True)
+        return
     bot.answer_callback_query(call.id)
     if call.data == "services":
         services_list = "\n".join(f"• {s}" for s in SUPPORTED_SERVICES)
@@ -233,8 +302,7 @@ def main():
     logger.info(f"Starting Downloader Bot v{src.__version__}")
     logger.info(f"Temp dir: {TEMP_DIR.absolute()}")
     logger.info(f"Max file size: {MAX_FILE_SIZE_MB}MB")
-    if ALLOWED_USERS:
-        logger.info(f"Access restricted to users: {ALLOWED_USERS}")
+    logger.info(f"Access whitelist enabled; administrator: {ADMIN_USER_ID}")
     logger.info(f"Services: {', '.join(SUPPORTED_SERVICES)}")
     logger.info("=" * 50)
 

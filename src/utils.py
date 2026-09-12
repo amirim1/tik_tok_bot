@@ -6,12 +6,21 @@ from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
 
-from src.config import ALLOWED_USERS, RATE_LIMIT_CALLS, RATE_LIMIT_FILE, RATE_LIMIT_WINDOW, TEMP_DIR
+from src.config import (
+    ADMIN_USER_ID,
+    ALLOWED_USERS,
+    ALLOWED_USERS_FILE,
+    RATE_LIMIT_CALLS,
+    RATE_LIMIT_FILE,
+    RATE_LIMIT_WINDOW,
+    TEMP_DIR,
+)
 
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _user_requests = {}
+_access_lock = threading.Lock()
 
 
 def _load_requests() -> dict:
@@ -31,6 +40,76 @@ def _save_requests(data: dict):
 
 
 _user_requests.update(_load_requests())
+
+
+def _default_allowed_users() -> set[int]:
+    """Начальный whitelist: администратор и ID из переменной окружения."""
+    return {ADMIN_USER_ID, *ALLOWED_USERS}
+
+
+def _load_allowed_users() -> set[int]:
+    path = Path(ALLOWED_USERS_FILE)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return _default_allowed_users()
+    except (OSError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to load access whitelist: {e}")
+        return _default_allowed_users()
+
+    if not isinstance(data, list):
+        logger.error("Access whitelist must contain a JSON list of Telegram user IDs")
+        return _default_allowed_users()
+
+    users = {item for item in data if isinstance(item, int) and not isinstance(item, bool)}
+    return users | {ADMIN_USER_ID}
+
+
+def _save_allowed_users(users: set[int]) -> None:
+    path = Path(ALLOWED_USERS_FILE)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.write_text(json.dumps(sorted(users), indent=2), encoding="utf-8")
+        temp_path.replace(path)
+    except OSError as e:
+        logger.error(f"Failed to save access whitelist: {e}")
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+_allowed_user_ids = _load_allowed_users()
+
+
+def is_admin(user_id: int) -> bool:
+    return user_id == ADMIN_USER_ID
+
+
+def list_allowed_users() -> list[int]:
+    with _access_lock:
+        return sorted(_allowed_user_ids)
+
+
+def grant_access(user_id: int) -> bool:
+    """Добавляет пользователя в whitelist. Возвращает False, если он уже есть."""
+    with _access_lock:
+        if user_id in _allowed_user_ids:
+            return False
+        _allowed_user_ids.add(user_id)
+        _save_allowed_users(_allowed_user_ids)
+        return True
+
+
+def revoke_access(user_id: int) -> bool:
+    """Удаляет пользователя из whitelist, но никогда не удаляет администратора."""
+    if is_admin(user_id):
+        return False
+    with _access_lock:
+        if user_id not in _allowed_user_ids:
+            return False
+        _allowed_user_ids.remove(user_id)
+        _save_allowed_users(_allowed_user_ids)
+        return True
 
 
 def _prune_stale(now: float, window: int):
@@ -120,9 +199,8 @@ def validate_url(url: str) -> bool:
 
 
 def check_access(user_id: int) -> bool:
-    if not ALLOWED_USERS:
-        return True
-    return user_id in ALLOWED_USERS
+    with _access_lock:
+        return user_id in _allowed_user_ids
 
 
 def is_valid_mp4(file_path) -> bool:

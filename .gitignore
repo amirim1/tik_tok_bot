@@ -8,6 +8,7 @@ venv/
 
 # Rate limit persistence
 rate_limit.json
+allowed_users.json
 
 # PyCharm
 .idea/
