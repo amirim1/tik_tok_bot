@@ -3,4 +3,6 @@ requests>=2.31.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.1
 python-dotenv>=1.0.0
-yt-dlp>=2024.12.0
+yt-dlp>=2026.8.19
+# TikTok currently requires browser impersonation; yt-dlp supports it through curl-cffi.
+curl-cffi>=0.13.0,<0.16.0

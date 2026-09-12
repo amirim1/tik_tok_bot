@@ -6,18 +6,20 @@ from bs4 import BeautifulSoup
 
 from src.config import DOWNLOAD_TIMEOUT, MAX_DOWNLOAD_RETRIES
 from src.downloaders.base import BaseDownloader
+from src.downloaders.ytdlp import YtDlpDownloader
 
 logger = logging.getLogger(__name__)
 
 
 class TikTokDownloader(BaseDownloader):
     def __init__(self, max_retries: int = None):
-        self.max_retries = max_retries or MAX_DOWNLOAD_RETRIES
+        self.max_retries = MAX_DOWNLOAD_RETRIES if max_retries is None else max_retries
         self.apis = [
             self._api_tiklydown,
             self._api_tikwm,
             self._api_snaptik,
         ]
+        self._ytdlp = YtDlpDownloader()
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': (
@@ -101,6 +103,15 @@ class TikTokDownloader(BaseDownloader):
         return None
 
     def get_video(self, url: str) -> dict | None:
+        # TikTok's web/API endpoints change frequently. yt-dlp is the primary
+        # path because it follows the redirect and handles the current browser
+        # challenge when curl-cffi is installed.
+        result = self._ytdlp.get_video(url)
+        if result:
+            logger.info("TikTok success via yt-dlp")
+            return result
+
+        logger.warning("yt-dlp failed, trying legacy TikTok APIs for: %s", url)
         for api_method in self.apis:
             for attempt in range(self.max_retries):
                 try:
@@ -113,8 +124,9 @@ class TikTokDownloader(BaseDownloader):
                 if attempt < self.max_retries - 1:
                     time.sleep(1)
             time.sleep(0.5)
-        logger.warning(f"TikTok APIs failed, falling back to yt-dlp for: {url}")
+        logger.warning(f"TikTok download failed via yt-dlp and legacy APIs: {url}")
         return None
 
     def close(self):
         self.session.close()
+        self._ytdlp.close()
