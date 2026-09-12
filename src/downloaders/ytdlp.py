@@ -49,6 +49,10 @@ class YtDlpDownloader(BaseDownloader):
                 "video_url": video_url,
                 "author": info.get('uploader') or info.get('channel') or info.get('creator') or "Unknown",
                 "description": info.get('description') or info.get('title') or "",
+                # Some CDNs (notably TikTok) require the cookies and browser
+                # headers collected during extraction to authorize the media URL.
+                "http_headers": info.get('http_headers') or {},
+                "cookies": {cookie.name: cookie.value for cookie in ydl.cookiejar},
             }
 
         except yt_dlp.utils.DownloadError as e:

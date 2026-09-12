@@ -5,7 +5,15 @@ import requests
 import telebot
 
 import src
-from src.config import ALLOWED_USERS, MAX_FILE_SIZE, MAX_FILE_SIZE_MB, TEMP_DIR, TOKEN, logger
+from src.config import (
+    ALLOWED_USERS,
+    DOWNLOAD_TIMEOUT,
+    MAX_FILE_SIZE,
+    MAX_FILE_SIZE_MB,
+    TEMP_DIR,
+    TOKEN,
+    logger,
+)
 from src.downloaders import close_all, get_downloader
 from src.utils import check_access, cleanup_old_files, is_safe_video_url, is_valid_mp4, rate_limit
 
@@ -119,7 +127,13 @@ def handle_video_request(message):
             "*Загружаю видео...*", parse_mode='Markdown',
         )
 
-        vr = requests.get(video_info["video_url"], stream=True, timeout=30)
+        vr = requests.get(
+            video_info["video_url"],
+            headers=video_info.get("http_headers"),
+            cookies=video_info.get("cookies"),
+            stream=True,
+            timeout=DOWNLOAD_TIMEOUT,
+        )
         vr.raise_for_status()
 
         cl = vr.headers.get('content-length')
