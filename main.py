@@ -1,5 +1,7 @@
+import re
 import signal
 from datetime import datetime
+from functools import wraps
 from urllib.parse import urljoin
 
 import requests
@@ -11,6 +13,8 @@ from src.config import (
     DOWNLOAD_TIMEOUT,
     MAX_FILE_SIZE,
     MAX_FILE_SIZE_MB,
+    RATE_LIMIT_CALLS,
+    RATE_LIMIT_WINDOW,
     TEMP_DIR,
     TOKEN,
     logger,
@@ -32,15 +36,18 @@ bot = telebot.TeleBot(TOKEN)
 
 SUPPORTED_SERVICES = [
     "TikTok", "Instagram (Reels, посты)", "YouTube / YouTube Shorts",
-    "Twitter / X", "Reddit", "Facebook", "Pinterest", "Vimeo",
+    "Twitter / X", "Reddit", "Facebook", "Pinterest", "Vimeo", "VK",
 ]
 
 HELP_TEXT = (
-    "*Советы:*\n"
-    "1. Скопируйте ссылку через 'Поделиться'\n"
-    "2. Убедитесь, что видео публичное\n"
-    "3. Отправьте ссылку боту\n"
-    "4. Если не работает — попробуйте другую ссылку"
+    "*Как пользоваться*\n"
+    "Пришли ссылку на видео (TikTok, YouTube, Instagram…) - просто вставь её в чат.\n\n"
+    "*Ограничения:*\n"
+    f"• Лимит: {RATE_LIMIT_CALLS} запросов за {RATE_LIMIT_WINDOW} с\n"
+    f"• Максимальный размер видео: {MAX_FILE_SIZE_MB} МБ\n"
+    "• Видео должно быть публичным\n\n"
+    "*Для админа:*\n"
+    "/access add|remove|list - управление доступом"
 )
 
 
@@ -52,28 +59,45 @@ def safe_edit(chat_id, message_id, text, **kwargs):
         logger.debug(f"edit_message_text ignored: {e}")
 
 
+def build_start_text() -> str:
+    """Стартовая карточка /start; используется и для кнопки «Назад»."""
+    services_list = "\n".join(f"• {s}" for s in SUPPORTED_SERVICES)
+    return (
+        "*Привет! Я бот для скачивания видео*\n\n"
+        "Просто отправь ссылку на видео — я скачаю его для тебя.\n\n"
+        "*Поддерживаемые платформы:*\n"
+        f"{services_list}\n\n"
+        f"*Максимальный размер:* {MAX_FILE_SIZE_MB}MB\n"
+        "*Только для личного использования*"
+    )
+
+
+def start_markup() -> telebot.types.InlineKeyboardMarkup:
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(
+        telebot.types.InlineKeyboardButton("Список сервисов", callback_data="services"),
+        telebot.types.InlineKeyboardButton("Помощь", callback_data="help"),
+    )
+    return markup
+
+
+def back_markup() -> telebot.types.InlineKeyboardMarkup:
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("◀️ Назад", callback_data="back"))
+    return markup
+
+
 @bot.message_handler(commands=['start'])
 def start(message):
     if not check_access(message.from_user.id):
         bot.reply_to(message, "У вас нет доступа к этому боту.")
         return
 
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(
-        telebot.types.InlineKeyboardButton("Список сервисов", callback_data="services"),
-        telebot.types.InlineKeyboardButton("Помощь", callback_data="help"),
-    )
-    services_list = "\n".join(f"• {s}" for s in SUPPORTED_SERVICES)
     bot.send_message(
         message.chat.id,
-        "*Привет! Я бот для скачивания видео*\n\n"
-        "Просто отправь ссылку на видео — я скачаю его для тебя.\n\n"
-        "*Поддерживаемые платформы:*\n"
-        f"{services_list}\n\n"
-        f"*Максимальный размер:* {MAX_FILE_SIZE_MB}MB\n"
-        "*Только для личного использования*",
+        build_start_text(),
         parse_mode='Markdown',
-        reply_markup=markup,
+        reply_markup=start_markup(),
     )
 
 
@@ -160,27 +184,61 @@ def callback_handler(call):
     bot.answer_callback_query(call.id)
     if call.data == "services":
         services_list = "\n".join(f"• {s}" for s in SUPPORTED_SERVICES)
-        bot.send_message(
-            call.message.chat.id,
+        safe_edit(
+            call.message.chat.id, call.message.message_id,
             "*Поддерживаемые платформы:*\n"
             f"{services_list}",
             parse_mode='Markdown',
+            reply_markup=back_markup(),
         )
     elif call.data == "help":
-        bot.send_message(call.message.chat.id, HELP_TEXT, parse_mode='Markdown')
+        safe_edit(
+            call.message.chat.id, call.message.message_id,
+            HELP_TEXT,
+            parse_mode='Markdown',
+            reply_markup=back_markup(),
+        )
+    elif call.data == "back":
+        safe_edit(
+            call.message.chat.id, call.message.message_id,
+            build_start_text(),
+            parse_mode='Markdown',
+            reply_markup=start_markup(),
+        )
+
+
+def require_access(bot_instance):
+    """Проверка доступа. Внешний декоратор: срабатывает ДО расхода лимита."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(message, *args, **kwargs):
+            user = message.from_user
+            if user is None or not check_access(user.id):
+                bot_instance.reply_to(message, "У вас нет доступа к этому боту.")
+                return
+            return func(message, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 @bot.message_handler(func=lambda m: True)
+@require_access(bot)
 @rate_limit(bot)
 def handle_video_request(message):
-    if not check_access(message.from_user.id):
-        bot.reply_to(message, "У вас нет доступа к этому боту.")
-        return
-
     if not message.text:
         return
 
     url = message.text.strip()
+    if "://" not in url and "." not in url[:30]:
+        bot.reply_to(
+            message,
+            "Пришли ссылку на видео (TikTok, YouTube, Instagram…) - "
+            "просто вставь её в чат",
+        )
+        return
 
     downloader, service_name = get_downloader(url)
     if not downloader:
@@ -192,7 +250,7 @@ def handle_video_request(message):
         )
         return
 
-    status_msg = bot.reply_to(message, "*Обрабатываю запрос...*", parse_mode='Markdown')
+    status_msg = bot.reply_to(message, "⏳ Обрабатываю…")
     video_path = None
 
     try:
@@ -212,7 +270,7 @@ def handle_video_request(message):
 
         safe_edit(
             message.chat.id, status_msg.message_id,
-            "*Загружаю видео...*", parse_mode='Markdown',
+            "⬇️ Загружаю…",
         )
 
         video_url = video_info["video_url"]
@@ -257,9 +315,11 @@ def handle_video_request(message):
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        video_path = TEMP_DIR / f"video_{message.from_user.id}_{timestamp}.mp4"
+        author = re.sub(r"[^\w-]", "", str(video_info.get("author") or "unknown"))[:40] or "unknown"
+        video_path = TEMP_DIR / f"{author}-{message.message_id}-{timestamp}.mp4"
 
         downloaded = 0
+        next_progress = 5 * 1024 * 1024
         with open(video_path, 'wb') as f:
             for chunk in vr.iter_content(1024 * 1024):
                 if chunk:
@@ -274,6 +334,13 @@ def handle_video_request(message):
                         )
                         return
 
+                    if downloaded >= next_progress:
+                        safe_edit(
+                            message.chat.id, status_msg.message_id,
+                            f"⬇️ Загружаю… {downloaded // (1024 * 1024)} МБ",
+                        )
+                        next_progress += 5 * 1024 * 1024
+
         if not is_valid_mp4(video_path):
             video_path.unlink(missing_ok=True)
             video_path = None
@@ -285,7 +352,7 @@ def handle_video_request(message):
 
         safe_edit(
             message.chat.id, status_msg.message_id,
-            "*Отправляю видео...*", parse_mode='Markdown',
+            "📤 Отправляю…",
         )
 
         with open(video_path, 'rb') as vf:
@@ -293,7 +360,7 @@ def handle_video_request(message):
             cap = f"Автор: @{video_info.get('author', 'unknown')}\n"
             if desc:
                 if len(desc) > 150:
-                    desc = desc[:150] + "..."
+                    desc = desc[:150] + "…"
                 cap += f"{desc}\n"
             cap += "\nСкачано через Downloader Bot"
             bot.send_video(

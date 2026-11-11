@@ -1,6 +1,7 @@
 import ipaddress
 import json
 import logging
+import math
 import socket
 import threading
 import time
@@ -140,9 +141,17 @@ def rate_limit(bot_instance, max_calls=None, time_window=None):
             with _lock:
                 _prune_stale(now, time_window)
 
-                if len(_user_requests.get(user_id, [])) >= max_calls:
+                timestamps = _user_requests.get(user_id, [])
+                if len(timestamps) >= max_calls:
+                    # Ждём освобождения самого раннего запроса из окна: остаток
+                    # считается от него, а не от фиксированных time_window секунд.
+                    if timestamps:
+                        retry_after = max(1, math.ceil(min(timestamps) + time_window - now))
+                    else:
+                        retry_after = time_window
                     reply_text = (
-                        f"Превышен лимит запросов. Попробуйте через {time_window} сек."
+                        f"Превышен лимит ({max_calls} за {time_window} с). "
+                        f"Попробуйте через {retry_after} сек."
                     )
                 else:
                     _user_requests.setdefault(user_id, []).append(now)
@@ -260,7 +269,7 @@ def cleanup_old_files(max_age_minutes: int = 5):
         now = time.time()
         cutoff = now - max_age_minutes * 60
         deleted = 0
-        for fp in Path(TEMP_DIR).glob("video_*.mp4"):
+        for fp in Path(TEMP_DIR).glob("*.mp4"):
             try:
                 if fp.stat().st_mtime < cutoff:
                     fp.unlink()
