@@ -7,7 +7,7 @@
 
 | Путь | Что это |
 |---|---|
-| `~/bot/bot.py` | дом-пульт бот (v6.4) - репа на ноуте: `Desktop\phone-home-bot` |
+| `~/bot/bot.py` | дом-пульт бот (v6.4) - репа на ноуте: `Desktop\projects\phone-home-bot` |
 | `~/bot/devices.json` | реестр устройств пульта (создаётся ботом, в git не входит) |
 | `~/bot/token.txt` | токен пульта (секрет, в git не входит) |
 | `~/bot/down_key` | ssh-ключ для /down /scr /cmd /lock на основной ПК (секрет) |
