@@ -141,13 +141,24 @@ clone_repo() {
     fi
 }
 
+pick_requirements() {
+    # На Termux curl-cffi (тяжёлый бинарный пакет) не нужен - свой API-даунлоадер
+    REQ=requirements.txt
+    case "${PREFIX:-}" in
+        *com.termux*)
+            if [ -f "requirements-phone.txt" ]; then REQ=requirements-phone.txt; fi
+            ;;
+    esac
+}
+
 setup_venv() {
+    pick_requirements
     if [ -f "venv/bin/python3" ] && [ -f "venv/bin/activate" ]; then
         info "Виртуальное окружение уже существует."
         source venv/bin/activate
-        # Даже при обновлении кода зависимости нужно привести к requirements.txt
-        info "Обновляю зависимости..."
-        pip install -q -r requirements.txt
+        # Даже при обновлении кода зависимости нужно привести к requirements
+        info "Обновляю зависимости ($REQ)..."
+        pip install -q -r "$REQ"
         return
     fi
     if [ -d "venv" ]; then
@@ -157,8 +168,8 @@ setup_venv() {
     info "Создаю виртуальное окружение..."
     $PY -m venv venv
     source venv/bin/activate
-    info "Устанавливаю зависимости..."
-    pip install -q -r requirements.txt
+    info "Устанавливаю зависимости ($REQ)..."
+    pip install -q -r "$REQ"
 }
 
 set_env_token() {

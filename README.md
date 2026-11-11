@@ -27,7 +27,7 @@ Telegram бот для скачивания видео из TikTok, Instagram, Y
 | Автоустановка одной командой | ✅ |
 | Docker (non-root, .dockerignore) | ✅ |
 | systemd автозапуск | ✅ |
-| CI: ruff + pytest (Python 3.11/3.12) | ✅ |
+| CI: ruff + pytest (Python 3.11-3.13, 3.14 - экспериментально) | ✅ |
 
 ## Быстрая установка (одной командой)
 
@@ -54,6 +54,12 @@ python3 -m venv venv
 source venv/bin/activate  # Windows: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python main.py
+```
+
+**Termux / телефон:** на телефоне `curl-cffi` не установлен и не нужен (TikTok работает через собственный API-даунлоадер), поэтому устанавливайте облегчённый набор зависимостей:
+
+```bash
+pip install -r requirements-phone.txt
 ```
 
 ## Docker

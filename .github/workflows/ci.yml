@@ -8,10 +8,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # 3.14 пока экспериментальная: её падение не валит весь workflow
+    continue-on-error: ${{ matrix.continue-on-error || false }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - python-version: "3.14"
+            continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
