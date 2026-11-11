@@ -161,6 +161,25 @@ setup_venv() {
     pip install -q -r requirements.txt
 }
 
+set_env_token() {
+    # Токен берётся из окружения и читается python'ом через os.environ:
+    # в argv процесса токена нет (sed с токеном в аргументах виден в ps).
+    "$PY" - <<'PYEOF'
+import os
+from pathlib import Path
+
+path = Path(".env")
+token = os.environ["TELEGRAM_BOT_TOKEN"]
+text = path.read_text(encoding="utf-8")
+if "your_bot_token_here" not in text:
+    raise SystemExit(1)
+path.write_text(
+    text.replace("your_bot_token_here", token),
+    encoding="utf-8",
+)
+PYEOF
+}
+
 setup_env() {
     if [ -f ".env" ]; then
         # Очищаем inline-комментарии (systemd EnvironmentFile их не понимает)
@@ -181,21 +200,27 @@ setup_env() {
     log ".env создан из .env.example"
 
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-        sed -i "s/your_bot_token_here/$TELEGRAM_BOT_TOKEN/" .env
-        log "TELEGRAM_BOT_TOKEN установлен из переменной окружения"
+        if set_env_token; then
+            log "TELEGRAM_BOT_TOKEN установлен из переменной окружения"
+        else
+            warn "Не удалось записать TELEGRAM_BOT_TOKEN в .env. Отредактируйте .env вручную."
+        fi
         return
     fi
 
     echo ""
-    # '|| ...' защищает от EOF при неинтерактивном запуске (CI/curl|bash)
-    read -p "Введите Telegram Bot Token (оставьте пустым, чтобы указать позже): " TOKEN_INPUT || TOKEN_INPUT=""
+    TOKEN_INPUT=""
+    # '|| true' защищает от EOF при неинтерактивном запуске (CI/curl|bash),
+    # не затирая при этом уже прочитанный ввод.
+    read -r -s -p "Введите Telegram Bot Token (ввод скрыт, оставьте пустым, чтобы указать позже): " TOKEN_INPUT || true
+    echo ""
     if [ -n "$TOKEN_INPUT" ]; then
-        if [[ "$(uname -s)" == "Darwin" ]]; then
-            sed -i '' "s/your_bot_token_here/$TOKEN_INPUT/" .env
+        export TELEGRAM_BOT_TOKEN="$TOKEN_INPUT"
+        if set_env_token; then
+            log "Токен сохранён в .env"
         else
-            sed -i "s/your_bot_token_here/$TOKEN_INPUT/" .env
+            warn "Не удалось записать токен в .env. Отредактируйте .env вручную."
         fi
-        log "Токен сохранён в .env"
     else
         warn "Токен не указан. Отредактируйте .env вручную."
     fi

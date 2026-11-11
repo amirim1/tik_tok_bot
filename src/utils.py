@@ -1,5 +1,7 @@
+import ipaddress
 import json
 import logging
+import socket
 import threading
 import time
 from functools import wraps
@@ -133,19 +135,24 @@ def rate_limit(bot_instance, max_calls=None, time_window=None):
         def wrapper(message, *args, **kwargs):
             user_id = str(message.from_user.id)
             now = time.time()
+            reply_text = None
 
             with _lock:
                 _prune_stale(now, time_window)
 
                 if len(_user_requests.get(user_id, [])) >= max_calls:
-                    bot_instance.reply_to(
-                        message,
+                    reply_text = (
                         f"Превышен лимит запросов. Попробуйте через {time_window} сек."
                     )
-                    return
+                else:
+                    _user_requests.setdefault(user_id, []).append(now)
+                    _save_requests(_user_requests)
 
-                _user_requests.setdefault(user_id, []).append(now)
-                _save_requests(_user_requests)
+            # Сетевой вызов отправки — вне _lock: иначе при деградации сети
+            # все обработчики встают в очередь на глобальную блокировку.
+            if reply_text is not None:
+                bot_instance.reply_to(message, reply_text)
+                return
 
             return func(message, *args, **kwargs)
         return wrapper
@@ -213,14 +220,39 @@ def is_valid_mp4(file_path) -> bool:
 
 
 def is_safe_video_url(url) -> bool:
-    """video_url приходит из сторонних API — разрешаем только прямые http(s)-ссылки."""
+    """video_url приходит из сторонних API — разрешаем только прямые http(s)-ссылки.
+
+    IP-адреса из приватных, loopback- и link-local-диапазонов запрещены (SSRF).
+    DNS не резолвим: проверяется только литеральный IP в hostname.
+    """
     if not url or not isinstance(url, str):
         return False
     try:
         parsed = urlparse(url)
+        hostname = parsed.hostname
     except ValueError:
         return False
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return False
+    if hostname:
+        # Хост с точкой на конце — тот же адрес ("192.168.1.1." == "192.168.1.1").
+        host = hostname.rstrip(".")
+        if host == "localhost" or host.endswith(".localhost"):
+            return False
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+        # Компактные IPv4-литералы ("127.1", "2130706433", "0x7f000001")
+        # ipaddress не понимает, а inet_aton разбирает их в 4 байта.
+        try:
+            ip = ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host)))
+        except (OSError, ValueError):
+            return True
+        return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+    return True
 
 
 def cleanup_old_files(max_age_minutes: int = 5):

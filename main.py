@@ -1,5 +1,6 @@
 import signal
 from datetime import datetime
+from urllib.parse import urljoin
 
 import requests
 import telebot
@@ -214,13 +215,36 @@ def handle_video_request(message):
             "*Загружаю видео...*", parse_mode='Markdown',
         )
 
-        vr = requests.get(
-            video_info["video_url"],
-            headers=video_info.get("http_headers"),
-            cookies=video_info.get("cookies"),
-            stream=True,
-            timeout=DOWNLOAD_TIMEOUT,
-        )
+        video_url = video_info["video_url"]
+        # Редиректы проходим вручную: allow_redirects=False не даёт requests
+        # увести скачивание на внутренний адрес в обход is_safe_video_url (SSRF).
+        redirects_left = 2
+        while True:
+            vr = requests.get(
+                video_url,
+                headers=video_info.get("http_headers"),
+                cookies=video_info.get("cookies"),
+                stream=True,
+                timeout=DOWNLOAD_TIMEOUT,
+                allow_redirects=False,
+            )
+            if vr.status_code not in (301, 302, 303, 307, 308) or redirects_left == 0:
+                break
+            next_url = urljoin(video_url, vr.headers.get("Location") or "")
+            vr.close()
+            if not is_safe_video_url(next_url):
+                safe_edit(
+                    message.chat.id, status_msg.message_id,
+                    "Не удалось получить видео.\n\n"
+                    "Возможные причины:\n"
+                    "• Видео недоступно или удалено\n"
+                    "• Видео приватное\n"
+                    "• Временные проблемы с сервисом",
+                )
+                return
+            redirects_left -= 1
+            video_url = next_url
+
         vr.raise_for_status()
 
         cl = vr.headers.get('content-length')
@@ -266,7 +290,7 @@ def handle_video_request(message):
 
         with open(video_path, 'rb') as vf:
             desc = video_info.get('description', '')
-            cap = f"Автор: @{video_info['author']}\n"
+            cap = f"Автор: @{video_info.get('author', 'unknown')}\n"
             if desc:
                 if len(desc) > 150:
                     desc = desc[:150] + "..."

@@ -108,6 +108,24 @@ class TestIsSafeVideoUrl:
         assert not is_safe_video_url("ftp://example.com/video.mp4")
         assert not is_safe_video_url("data:text/html,hi")
 
+    def test_private_addresses_blocked(self):
+        assert not is_safe_video_url("http://192.168.1.1/x.mp4")
+        assert not is_safe_video_url("http://127.0.0.1/x.mp4")
+        assert not is_safe_video_url("http://169.254.1.1/x.mp4")
+
+    def test_public_domain_allowed(self):
+        assert is_safe_video_url("https://cdn.example.com/x.mp4")
+
+    def test_localhost_blocked(self):
+        assert not is_safe_video_url("http://localhost/x.mp4")
+        assert not is_safe_video_url("http://LocalHost/x.mp4")
+
+    def test_compact_ipv4_and_trailing_dot_blocked(self):
+        assert not is_safe_video_url("http://127.1/x.mp4")
+        assert not is_safe_video_url("http://2130706433/x.mp4")
+        assert not is_safe_video_url("http://0x7f000001/x.mp4")
+        assert not is_safe_video_url("http://192.168.1.1./x.mp4")
+
     def test_invalid_values(self):
         assert not is_safe_video_url(None)
         assert not is_safe_video_url("")
