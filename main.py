@@ -1,7 +1,10 @@
 import re
 import signal
+import threading
+import time
 from datetime import datetime
 from functools import wraps
+from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
@@ -401,6 +404,21 @@ def handle_video_request(message):
         cleanup_old_files()
 
 
+PULSE_FILE = Path.home() / "agent-bot" / "pulse" / "tiktok"
+
+
+def _pulse_loop(interval=60):
+    """Пульс-файл для сторожа v5 (mtime): infinity_polling блокирует, поэтому
+    трогаем файл отдельным daemon-потоком - процесс жив, значит и пульс жив."""
+    while True:
+        try:
+            PULSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            PULSE_FILE.touch()
+        except OSError:
+            pass  # сторож решает по pgrep, как раньше
+        time.sleep(interval)
+
+
 def _request_shutdown(signum, frame):
     logger.info(f"Received signal {signum}, shutting down...")
     raise KeyboardInterrupt
@@ -425,6 +443,8 @@ def main():
     signal.signal(signal.SIGTERM, _request_shutdown)
 
     cleanup_old_files(max_age_minutes=1)
+
+    threading.Thread(target=_pulse_loop, daemon=True).start()
 
     try:
         logger.info("Bot is polling...")
