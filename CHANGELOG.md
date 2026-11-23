@@ -8,12 +8,13 @@
 - Ошибки `TeleBot` не дублируются в логе: убран собственный StreamHandler библиотеки (в Termux stdout и stderr идут в один файл).
 - **Общий дедлайн на получение ссылки** (`GET_VIDEO_DEADLINE`, по умолчанию 120 с): каждая попытка yt-dlp и legacy-API TikTok получает остаток времени и не начинается, если осталось меньше 5 с; пользователю отвечает «Превышено время получения ссылки». В yt-dlp заданы `socket_timeout`, `retries`, `extractor_retries`.
 - **SSRF:** `is_safe_video_url` резолвит хост и отклоняет ссылку, если хотя бы один IP закрытый (IPv4, IPv6, IPv4-mapped IPv6, reserved/multicast); неразрешающийся хост отклоняется. Соединение не закреплено за проверенным IP - остаточный риск DNS rebinding описан в README.
+- **SSRF и FakeIP:** для сети за прозрачным прокси с FakeIP-DNS - `SSRF_ALLOW_FAKEIP=1` (по умолчанию выключено): DNS-ответ целиком из `198.18.0.0/15` допустим, смешанный ответ и литерал в URL - нет.
 - **webm/mkv от yt-dlp** больше не отбрасываются: контейнер определяется по содержимому (`detect_video_container`), расширение файла ставится по факту; в yt-dlp задан `merge_output_format=mp4`.
 - **Ссылка с подписью:** из сообщения берётся первый http(s)-URL (TikTok присылает «ссылка 🎵 оригинальный звук - …»), вся строка больше не трактуется как URL.
 - **Graceful shutdown:** после SIGTERM новые запросы отклоняются, активная загрузка останавливается, рабочие потоки получают до 10 с на завершение (ранее процесс обрывал их сразу).
 
 ### Сборка и зависимости
-- Зависимости закреплены версиями, проверенными на телефоне: pyTelegramBotAPI 4.37.1, requests 2.34.2, beautifulsoup4 4.15.0, lxml 6.1.3, python-dotenv 1.2.4, yt-dlp 2026.10.26 (`requirements.txt` и `requirements-phone.txt`). `curl-cffi` остаётся диапазоном `>=0.13.0,<0.16.0`. **Регламент обновлений:** обновление `yt-dlp` (и остальных) - осознанный шаг: правка обоих requirements + запись в этом CHANGELOG.
+- Зависимости закреплены версиями, проверенными в работе: pyTelegramBotAPI 4.37.1, requests 2.34.2, beautifulsoup4 4.15.0, lxml 6.1.3, python-dotenv 1.2.4, yt-dlp 2026.10.26 (`requirements.txt`, `requirements-phone.txt`).
 - GitHub Actions закреплены по SHA: `actions/checkout` v4, `actions/setup-python` v5.
 - `Dockerfile`: `python:3.12-slim` закреплён по digest (обновлять осознанно вместе с зависимостями).
 

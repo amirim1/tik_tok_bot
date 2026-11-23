@@ -68,6 +68,11 @@ MAX_DOWNLOAD_RETRIES = int(os.getenv("MAX_DOWNLOAD_RETRIES", "2"))
 # Общий дедлайн на получение прямой ссылки (все попытки всех источников, сек).
 GET_VIDEO_DEADLINE = int(os.getenv("GET_VIDEO_DEADLINE", "120"))
 
+# Разрешить DNS-ответ целиком из 198.18.0.0/15 (FakeIP прозрачного прокси, напр.
+# маршрутизатора с fake-ip DNS). По умолчанию выключено: в обычной сети такие адреса
+# закрыты. Включать только там, где бот работает за таким прокси.
+SSRF_ALLOW_FAKEIP = os.getenv("SSRF_ALLOW_FAKEIP", "0").strip().lower() in ("1", "true", "yes")
+
 
 def migrate_legacy_state() -> int:
     """До v0.4.3 файлы состояния лежали в cwd запуска, а не в каталоге проекта
