@@ -72,16 +72,19 @@ GET_VIDEO_DEADLINE = int(os.getenv("GET_VIDEO_DEADLINE", "120"))
 def migrate_legacy_state() -> int:
     """До v0.4.3 файлы состояния лежали в cwd запуска, а не в каталоге проекта
     (на Termux - в $HOME). Копируем их в новое место, старые не трогаем.
-    Только для путей по умолчанию: явная переменная окружения - выбор владельца."""
+    Считаем эффективный новый путь, а не «задана ли переменная»: .env обычно
+    содержит относительное значение из .env.example (rate_limit.json), и оно
+    теперь тоже указывает в каталог проекта."""
     migrated = 0
     for env_name, default_name in (
         ("RATE_LIMIT_FILE", "rate_limit.json"),
         ("ALLOWED_USERS_FILE", "allowed_users.json"),
     ):
-        if os.getenv(env_name):
-            continue
-        new_path = BASE_DIR / default_name
+        new_path = _state_path(env_name, default_name)
         old_path = Path.cwd() / default_name
+        # Другое имя файла в переменной - другое хранилище, старый файл не трогаем.
+        if new_path.name != default_name:
+            continue
         if new_path == old_path or new_path.exists() or not old_path.is_file():
             continue
         try:

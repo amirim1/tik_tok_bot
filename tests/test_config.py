@@ -93,7 +93,22 @@ class TestMigrateLegacyState:
         assert config.migrate_legacy_state() == 0
         assert (project / "rate_limit.json").read_text(encoding="utf-8") == '{"2": [2]}'
 
-    def test_explicit_env_path_is_not_migrated(self, monkeypatch, tmp_path):
+    def test_env_value_from_env_example_is_migrated(self, monkeypatch, tmp_path):
+        # .env с RATE_LIMIT_FILE=rate_limit.json (как в .env.example) не должен
+        # отключать перенос: значение относительное и ведёт в каталог проекта.
+        project, home = tmp_path / "proj", tmp_path / "home"
+        project.mkdir()
+        home.mkdir()
+        (home / "rate_limit.json").write_text('{"1": [1]}', encoding="utf-8")
+        monkeypatch.setattr(config, "BASE_DIR", project)
+        monkeypatch.chdir(home)
+        monkeypatch.setenv("RATE_LIMIT_FILE", "rate_limit.json")
+        monkeypatch.delenv("ALLOWED_USERS_FILE", raising=False)
+
+        assert config.migrate_legacy_state() == 1
+        assert (project / "rate_limit.json").read_text(encoding="utf-8") == '{"1": [1]}'
+
+    def test_custom_env_path_is_not_migrated(self, monkeypatch, tmp_path):
         project, home = tmp_path / "proj", tmp_path / "home"
         project.mkdir()
         home.mkdir()
@@ -105,6 +120,7 @@ class TestMigrateLegacyState:
 
         assert config.migrate_legacy_state() == 0
         assert not (project / "rate_limit.json").exists()
+        assert not (tmp_path / "custom.json").exists()
 
 
 class TestLogging:
