@@ -269,13 +269,16 @@ def cleanup_old_files(max_age_minutes: int = 5):
         now = time.time()
         cutoff = now - max_age_minutes * 60
         deleted = 0
-        for fp in Path(TEMP_DIR).glob("*.mp4"):
-            try:
-                if fp.stat().st_mtime < cutoff:
-                    fp.unlink()
-                    deleted += 1
-            except Exception as e:
-                logger.error(f"Error deleting {fp}: {e}")
+        # До v0.4.3 temp_videos был относителен cwd запуска: подчищаем и старый.
+        directories = {Path(TEMP_DIR), Path.cwd() / "temp_videos"}
+        for directory in directories:
+            for fp in directory.glob("*.mp4"):
+                try:
+                    if fp.stat().st_mtime < cutoff:
+                        fp.unlink()
+                        deleted += 1
+                except Exception as e:
+                    logger.error(f"Error deleting {fp}: {e}")
         if deleted:
             logger.info(f"Cleaned {deleted} old files")
     except Exception as e:
