@@ -234,11 +234,27 @@ def is_valid_mp4(file_path) -> bool:
         return False
 
 
+def _is_forbidden_ip(ip) -> bool:
+    """Адрес, закрытый для скачивания: приватная, служебная или локальная сеть."""
+    return (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
+
+
+def _resolve_host(host: str) -> list[str]:
+    """Все IP хоста (IPv4 и IPv6). Вынесено отдельно, чтобы тесты подменяли резолвер."""
+    infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    return list(dict.fromkeys(info[4][0] for info in infos))
+
+
 def is_safe_video_url(url) -> bool:
     """video_url приходит из сторонних API — разрешаем только прямые http(s)-ссылки.
 
-    IP-адреса из приватных, loopback- и link-local-диапазонов запрещены (SSRF).
-    DNS не резолвим: проверяется только литеральный IP в hostname.
+    Приватные, loopback- и link-local-адреса запрещены (SSRF). Хост резолвится:
+    адрес запрещён, если ХОТЯ БЫ один из IP хоста закрытый (IPv4 и IPv6, включая
+    IPv4-mapped IPv6). Остаточный риск: между этой проверкой и запросом DNS-ответ
+    может измениться (DNS rebinding); соединение не закреплено за проверенным IP.
     """
     if not url or not isinstance(url, str):
         return False
@@ -257,16 +273,19 @@ def is_safe_video_url(url) -> bool:
         try:
             ip = ipaddress.ip_address(host)
         except ValueError:
-            pass
-        else:
-            return not (ip.is_private or ip.is_loopback or ip.is_link_local)
-        # Компактные IPv4-литералы ("127.1", "2130706433", "0x7f000001")
-        # ipaddress не понимает, а inet_aton разбирает их в 4 байта.
-        try:
-            ip = ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host)))
-        except (OSError, ValueError):
-            return True
-        return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+            # Компактные IPv4-литералы ("127.1", "2130706433", "0x7f000001")
+            # ipaddress не понимает, а inet_aton разбирает их в 4 байта.
+            try:
+                ip = ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host)))
+            except (OSError, ValueError):
+                # Обычное DNS-имя. Неразрешающийся хост запрещаем: скачивание с
+                # него всё равно невозможно, а fail-closed не открывает дыру.
+                try:
+                    addresses = _resolve_host(host)
+                except (OSError, ValueError):
+                    return False
+                return bool(addresses) and not any(_is_forbidden_ip(ipaddress.ip_address(a)) for a in addresses)
+        return not _is_forbidden_ip(ip)
     return True
 
 

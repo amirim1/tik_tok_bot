@@ -1,3 +1,6 @@
+import pytest
+
+import src.utils as utils
 from src.utils import (
     check_access,
     extract_hostname,
@@ -97,6 +100,12 @@ class TestValidateUrl:
 
 
 class TestIsSafeVideoUrl:
+    @pytest.fixture(autouse=True)
+    def stub_resolver(self, monkeypatch):
+        # Тесты не зависят от DNS: по умолчанию имя резолвится в публичный адрес.
+        self.resolved = ["93.184.216.34"]
+        monkeypatch.setattr(utils, "_resolve_host", lambda host: list(self.resolved))
+
     def test_https(self):
         assert is_safe_video_url("https://cdn.example.com/video.mp4")
 
