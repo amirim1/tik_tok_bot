@@ -35,11 +35,17 @@ def _load_requests() -> dict:
 
 
 def _save_requests(data: dict):
+    # Атомарная запись, как в _save_allowed_users: обрыв посреди записи
+    # не оставлял бы битый JSON (и бот молча начинал лимит с нуля).
+    path = Path(RATE_LIMIT_FILE)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
     try:
-        with open(RATE_LIMIT_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temp_path.replace(path)
     except Exception as e:
         logger.error(f"Failed to save rate limit data: {e}")
+        temp_path.unlink(missing_ok=True)
 
 
 _user_requests.update(_load_requests())
