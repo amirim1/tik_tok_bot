@@ -65,6 +65,10 @@ ALLOWED_USERS_FILE = _state_path("ALLOWED_USERS_FILE", "allowed_users.json")
 
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT", "30"))
 MAX_DOWNLOAD_RETRIES = int(os.getenv("MAX_DOWNLOAD_RETRIES", "2"))
+# Общий дедлайн на получение прямой ссылки (все попытки всех источников, сек).
+GET_VIDEO_DEADLINE = int(os.getenv("GET_VIDEO_DEADLINE", "120"))
+
+
 def migrate_legacy_state() -> int:
     """До v0.4.3 файлы состояния лежали в cwd запуска, а не в каталоге проекта
     (на Termux - в $HOME). Копируем их в новое место, старые не трогаем.

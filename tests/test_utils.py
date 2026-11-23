@@ -7,6 +7,7 @@ from src.utils import (
     check_access,
     detect_video_container,
     extract_hostname,
+    extract_url,
     grant_access,
     is_admin,
     is_safe_video_url,
@@ -218,6 +219,32 @@ class TestDetectVideoContainer:
         f = tmp_path / "a.mp4"
         f.write_text("<html>blocked</html>")
         assert detect_video_container(f) is None
+
+
+class TestExtractUrl:
+    def test_url_with_caption(self):
+        text = "https://www.tiktok.com/@user/video/123?is_from_webapp=1 🎵 оригинальный звук - author"
+        assert extract_url(text) == "https://www.tiktok.com/@user/video/123?is_from_webapp=1"
+
+    def test_caption_before_url(self):
+        text = "Смотри: https://vt.tiktok.com/ZSdjx4HkR/"
+        assert extract_url(text) == "https://vt.tiktok.com/ZSdjx4HkR/"
+
+    def test_first_url_wins(self):
+        text = "https://www.tiktok.com/@a/video/1 https://youtu.be/x"
+        assert extract_url(text) == "https://www.tiktok.com/@a/video/1"
+
+    def test_angle_brackets_and_trailing_punctuation(self):
+        assert extract_url("<https://youtu.be/abc>.") == "https://youtu.be/abc"
+
+    def test_bare_url(self):
+        assert extract_url("  https://x.com/u/status/1\n") == "https://x.com/u/status/1"
+
+    def test_no_url(self):
+        assert extract_url("привет") is None
+        assert extract_url("tiktok.com/@u/video/1") is None
+        assert extract_url("") is None
+        assert extract_url(None) is None
 
 
 class TestCheckAccess:
