@@ -255,6 +255,23 @@ def _is_forbidden_ip(ip) -> bool:
     )
 
 
+# 198.18.0.0/15 (benchmark) - диапазон FakeIP домашнего роутера: DNS отвечает таким
+# адресом вместо настоящего, а роутер сам проксирует соединение по имени хоста.
+# Без этого исключения на телефоне дома все домены TikTok резолвились в 198.18.x.x
+# и отклонялись как SSRF (проверено 2026-11-23: www.tiktok.com -> 198.18.2.196).
+FAKEIP_NET = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _is_fakeip_answer(ips) -> bool:
+    """DNS-ответ целиком лежит в FakeIP: имя резолвилось через роутер, а не в реальную сеть.
+
+    Исключение действует, только если В КАЖДОЙ записи ответа - FakeIP. Смешанный
+    ответ (FakeIP + что-то ещё) и IP-литерал из этого диапазона в URL остаются
+    запрещёнными: так внутренний адрес не спрятать за одним «правильным».
+    """
+    return bool(ips) and all(ipaddress.ip_address(a) in FAKEIP_NET for a in ips)
+
+
 def _resolve_host(host: str) -> list[str]:
     """Все IP хоста (IPv4 и IPv6). Вынесено отдельно, чтобы тесты подменяли резолвер."""
     infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
@@ -297,6 +314,8 @@ def is_safe_video_url(url) -> bool:
                     addresses = _resolve_host(host)
                 except (OSError, ValueError):
                     return False
+                if _is_fakeip_answer(addresses):
+                    return True
                 return bool(addresses) and not any(_is_forbidden_ip(ipaddress.ip_address(a)) for a in addresses)
         return not _is_forbidden_ip(ip)
     return True

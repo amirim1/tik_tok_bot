@@ -158,6 +158,22 @@ class TestIsSafeVideoUrl:
         self.resolved = []
         assert not is_safe_video_url("https://cdn.example.com/video.mp4")
 
+    def test_fakeip_answer_allowed(self):
+        # домашний роутер отвечает FakeIP из 198.18.0.0/15 вместо настоящего адреса
+        self.resolved = ["198.18.2.196"]
+        assert is_safe_video_url("https://v19-webapp-prime.tiktok.com/video.mp4")
+
+    def test_fakeip_mixed_with_other_address_blocked(self):
+        self.resolved = ["198.18.2.196", "10.0.0.5"]
+        assert not is_safe_video_url("https://cdn.example.com/video.mp4")
+        self.resolved = ["198.18.2.196", "93.184.216.34"]
+        assert not is_safe_video_url("https://cdn.example.com/video.mp4")
+
+    def test_fakeip_literal_in_url_blocked(self):
+        # литерал в URL - это не DNS-ответ роутера, а прямой адрес
+        assert not is_safe_video_url("http://198.18.2.196/video.mp4")
+        assert not is_safe_video_url("http://[::ffff:198.18.2.196]/video.mp4")
+
     def test_ipv6_literals_blocked(self):
         assert not is_safe_video_url("http://[::1]/x.mp4")
         assert not is_safe_video_url("http://[fe80::1]/x.mp4")
