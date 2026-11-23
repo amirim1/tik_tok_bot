@@ -147,7 +147,7 @@ sudo systemctl enable --now tik-tok-bot
 ```bash
 pip install -r requirements-dev.txt
 ruff check .   # линт
-pytest         # тесты (122 шт.; сеть в тестах запрещена)
+pytest         # тесты (127 шт.; сеть в тестах запрещена)
 ```
 
 ## История версий
