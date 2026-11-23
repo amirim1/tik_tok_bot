@@ -3,7 +3,7 @@
 Telegram бот для скачивания видео из TikTok, Instagram, YouTube, Twitter и других платформ.
 
 ![CI](https://github.com/amirim1/tik_tok_bot/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.4.2-blue)
+![Version](https://img.shields.io/badge/version-0.4.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Возможности
@@ -21,9 +21,10 @@ Telegram бот для скачивания видео из TikTok, Instagram, Y
 | VK | ✅ |
 | Whitelist и управление доступом из Telegram | ✅ |
 | Rate limit с персистентностью и автоочисткой | ✅ |
-| Проверка контента (MP4 magic bytes + схема URL) | ✅ |
+| Общий дедлайн на получение ссылки, ссылка с подписью из TikTok | ✅ |
+| Проверка контента (контейнер по содержимому: mp4/webm/mkv; SSRF-фильтр `video_url` с DNS) | ✅ |
 | Команда `/help` | ✅ |
-| Graceful shutdown (SIGTERM/SIGINT) | ✅ |
+| Graceful shutdown (SIGTERM/SIGINT: до 10 с на завершение загрузок) | ✅ |
 | Автоустановка одной командой | ✅ |
 | Docker (non-root, .dockerignore) | ✅ |
 | systemd автозапуск | ✅ |
@@ -61,6 +62,8 @@ python main.py
 ```bash
 pip install -r requirements-phone.txt
 ```
+
+Зависимости закреплены точными версиями (`==`) - это то, что проверено на телефоне. `yt-dlp` обновляйте только осознанно (он ломается от изменений сайтов, а не от багов): правка `requirements.txt` и `requirements-phone.txt` + запись в `CHANGELOG.md`. `curl-cffi` в `requirements.txt` остаётся диапазоном (на телефоне не ставится).
 
 ## Docker
 
@@ -113,7 +116,11 @@ sudo systemctl enable --now tik-tok-bot
 | `ADMIN_USER_ID` | — | **Обязательно.** Telegram ID администратора (только в закрытом `.env`) |
 | `ALLOWED_USERS` | (пусто) | Начальные ID whitelist для первого запуска |
 | `ALLOWED_USERS_FILE` | `allowed_users.json` | Хранилище текущего whitelist, не попадает в Git |
-| `DOWNLOAD_TIMEOUT` | `30` | Таймаут загрузки (сек) |
+| `DOWNLOAD_TIMEOUT` | `30` | Таймаут загрузки и сетевой таймаут yt-dlp (сек) |
+| `GET_VIDEO_DEADLINE` | `120` | Общий дедлайн на получение прямой ссылки (сек); затем пользователь получает «Превышено время получения ссылки» |
+| `LOG_FILE` | `bot.log` | Файл лога (root-хендлеры пишут и в файл, и в stdout/stderr) |
+
+`LOG_FILE`, `TEMP_DIR`, `RATE_LIMIT_FILE`, `ALLOWED_USERS_FILE` считаются от каталога проекта (каталог `main.py`), а не от текущего каталога запуска: бот можно запускать из любого места. Абсолютный путь из переменной берётся как есть. При первом старте после v0.4.2 файлы `rate_limit.json` и `allowed_users.json` из каталога запуска копируются в каталог проекта (старые не удаляются).
 
 ## Управление доступом
 
@@ -127,17 +134,33 @@ sudo systemctl enable --now tik-tok-bot
 
 В `/access list` бот выводит ID и `@username`, если Telegram предоставляет его для этого чата; иначе показывает имя или только ID.
 
+## Безопасность скачивания
+
+`video_url`, полученный от сторонних API и yt-dlp, проверяется перед запросом и на каждом редиректе: только http(s), хост не `localhost`, и ни один IP из DNS-ответа не приватный, loopback или link-local (IPv4 и IPv6, включая IPv4-mapped). Неразрешающийся хост отклоняется.
+
+Остаточный риск: соединение идёт по имени хоста, а не закреплено за проверенным IP, поэтому атакующий DNS с коротким TTL может отдать публичный адрес на проверку и приватный на запрос (DNS rebinding). Риск ограничен сторонними API, из которых приходит `video_url`.
+
 ## Разработка
 
 ```bash
 pip install -r requirements-dev.txt
 ruff check .   # линт
-pytest         # тесты (62 шт.)
+pytest         # тесты (122 шт.; сеть в тестах запрещена)
 ```
 
 ## История версий
 
 См. [CHANGELOG.md](CHANGELOG.md).
+
+### v0.4.3 - Аудит 2026-11-23
+- Файлы состояния хранятся в каталоге проекта, старые переносятся при старте
+- `rate_limit.json` пишется атомарно; ошибки TeleBot не дублируются в логе
+- Общий дедлайн на получение ссылки (`GET_VIDEO_DEADLINE`, 120 с) и сетевые таймауты yt-dlp
+- SSRF-фильтр проверяет DNS-ответ хоста (остаточный риск DNS rebinding - см. выше)
+- webm/mkv от yt-dlp отправляются с расширением по содержимому
+- Ссылка с подписью («🎵 оригинальный звук - …») обрабатывается
+- SIGTERM: новые запросы не принимаются, загрузки получают до 10 с на завершение
+- Зависимости закреплены версиями, GitHub Actions - по SHA, базовый образ Docker - по digest
 
 ### v0.4.2 — Безопасность
 - SSRF-фильтр `video_url`: приватные/loopback-адреса, компактные IPv4-формы и `localhost` отклоняются; редиректы скачивания проверяются вручную
