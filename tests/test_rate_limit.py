@@ -1,5 +1,6 @@
 import json
 import time
+from pathlib import Path
 
 import pytest
 
@@ -93,3 +94,26 @@ def test_persists_to_file(limited_handler, tmp_path):
     data = json.loads(rl_file.read_text())
     assert "7" in data
     assert len(data["7"]) == 1
+
+
+def test_save_is_atomic(limited_handler, tmp_path):
+    bot, handler = limited_handler
+    handler(FakeMessage(7))
+    # После записи не остаётся временного файла, на диске - валидный JSON.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["rl.json"]
+    assert json.loads((tmp_path / "rl.json").read_text()) == {"7": utils._user_requests["7"]}
+
+
+def test_failed_replace_keeps_old_file(limited_handler, tmp_path, monkeypatch):
+    bot, handler = limited_handler
+    handler(FakeMessage(7))
+    old_content = (tmp_path / "rl.json").read_text()
+
+    real_replace = Path.replace
+    monkeypatch.setattr(Path, "replace", lambda self, target: (_ for _ in ()).throw(OSError("disk full")))
+    handler(FakeMessage(8))
+    monkeypatch.setattr(Path, "replace", real_replace)
+
+    # Файл не испорчен, временный убран
+    assert (tmp_path / "rl.json").read_text() == old_content
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["rl.json"]
