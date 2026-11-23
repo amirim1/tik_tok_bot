@@ -30,6 +30,11 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+# pyTelegramBotAPI вешает на свой логгер отдельный StreamHandler в stderr поверх
+# нашего root-хендлера: каждая ошибка поллинга попадала в лог дважды (в Termux
+# stdout и stderr перенаправлены в один файл). Оставляем только root-хендлеры.
+for _handler in logging.getLogger("TeleBot").handlers[:]:
+    logging.getLogger("TeleBot").removeHandler(_handler)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import src.config as config
@@ -104,3 +105,9 @@ class TestMigrateLegacyState:
 
         assert config.migrate_legacy_state() == 0
         assert not (project / "rate_limit.json").exists()
+
+
+class TestLogging:
+    def test_telebot_has_no_own_handler(self):
+        # Свой StreamHandler pyTelegramBotAPI дублировал записи root-хендлеров.
+        assert logging.getLogger("TeleBot").handlers == []
