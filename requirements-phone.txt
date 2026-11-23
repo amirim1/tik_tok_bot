@@ -1,8 +1,9 @@
-pyTelegramBotAPI>=4.19.2
-requests>=2.31.0
-beautifulsoup4>=4.12.3
-lxml>=5.2.1
-python-dotenv>=1.0.0
-yt-dlp>=2026.8.19
 # curl-cffi намеренно исключён: на телефоне (Termux) он не установлен и не нужен,
 # TikTok работает через собственный API-даунлоадер (src/downloaders/tiktok.py).
+# Версии = проверенные на телефоне; менять вместе с requirements.txt и записью в CHANGELOG.
+pyTelegramBotAPI==4.37.1
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.3
+python-dotenv==1.2.4
+yt-dlp==2026.10.26

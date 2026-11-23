@@ -1,8 +1,10 @@
-pyTelegramBotAPI>=4.19.2
-requests>=2.31.0
-beautifulsoup4>=4.12.3
-lxml>=5.2.1
-python-dotenv>=1.0.0
-yt-dlp>=2026.8.19
+pyTelegramBotAPI==4.37.1
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.3
+python-dotenv==1.2.4
+# Обновлять только осознанно: yt-dlp ломается от изменений сайтов, а не от багов.
+# Регламент обновлений: правка версии здесь и в requirements-phone.txt + запись в CHANGELOG.
+yt-dlp==2026.10.26
 # TikTok currently requires browser impersonation; yt-dlp supports it through curl-cffi.
 curl-cffi>=0.13.0,<0.16.0
