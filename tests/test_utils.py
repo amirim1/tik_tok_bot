@@ -1,8 +1,11 @@
+import socket
+
 import pytest
 
 import src.utils as utils
 from src.utils import (
     check_access,
+    detect_video_container,
     extract_hostname,
     grant_access,
     is_admin,
@@ -135,6 +138,40 @@ class TestIsSafeVideoUrl:
         assert not is_safe_video_url("http://0x7f000001/x.mp4")
         assert not is_safe_video_url("http://192.168.1.1./x.mp4")
 
+    def test_domain_resolving_to_private_address_blocked(self):
+        self.resolved = ["93.184.216.34", "10.0.0.5"]
+        assert not is_safe_video_url("https://cdn.example.com/video.mp4")
+
+    def test_domain_resolving_to_link_local_ipv6_blocked(self):
+        self.resolved = ["2606:2800:220:1:248:1893:25c8:1946", "fe80::1"]
+        assert not is_safe_video_url("https://cdn.example.com/video.mp4")
+
+    def test_unresolvable_host_blocked(self, monkeypatch):
+        def fail(host):
+            raise socket.gaierror(11001, "getaddrinfo failed")
+
+        monkeypatch.setattr(utils, "_resolve_host", fail)
+        assert not is_safe_video_url("https://no-such-host.invalid/video.mp4")
+
+    def test_domain_without_addresses_blocked(self):
+        self.resolved = []
+        assert not is_safe_video_url("https://cdn.example.com/video.mp4")
+
+    def test_ipv6_literals_blocked(self):
+        assert not is_safe_video_url("http://[::1]/x.mp4")
+        assert not is_safe_video_url("http://[fe80::1]/x.mp4")
+        assert not is_safe_video_url("http://[fc00::1]/x.mp4")
+
+    def test_ipv4_mapped_ipv6_blocked(self):
+        assert not is_safe_video_url("http://[::ffff:127.0.0.1]/x.mp4")
+        assert not is_safe_video_url("http://[::ffff:192.168.1.1]/x.mp4")
+        assert is_safe_video_url("http://[::ffff:8.8.8.8]/x.mp4")
+
+    def test_reserved_and_multicast_blocked(self):
+        assert not is_safe_video_url("http://0.0.0.0/x.mp4")
+        assert not is_safe_video_url("http://224.0.0.1/x.mp4")
+        assert not is_safe_video_url("http://240.0.0.1/x.mp4")
+
     def test_invalid_values(self):
         assert not is_safe_video_url(None)
         assert not is_safe_video_url("")
@@ -157,6 +194,30 @@ class TestIsValidMp4:
         f = tmp_path / "empty.mp4"
         f.write_bytes(b'')
         assert not is_valid_mp4(f)
+
+
+class TestDetectVideoContainer:
+    def test_mp4(self, tmp_path):
+        f = tmp_path / "a.mp4"
+        f.write_bytes(b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00')
+        assert detect_video_container(f) == "mp4"
+        assert is_valid_mp4(f)
+
+    def test_webm(self, tmp_path):
+        f = tmp_path / "a.webm"
+        f.write_bytes(b'\x1aE\xdf\xa3\x00\x00\x00\x1fB\x86\x81\x01B\xf7\x81\x01B\xf2\x81\x04B\xf3\x81\x08B\x82webm')
+        assert detect_video_container(f) == "webm"
+        assert not is_valid_mp4(f)
+
+    def test_mkv(self, tmp_path):
+        f = tmp_path / "a.mkv"
+        f.write_bytes(b'\x1aE\xdf\xa3\x00\x00\x00\x1fB\x86\x81\x01B\xf7\x81\x01B\xf2\x81\x04B\xf3\x81\x08B\x82matroska')
+        assert detect_video_container(f) == "mkv"
+
+    def test_not_video(self, tmp_path):
+        f = tmp_path / "a.mp4"
+        f.write_text("<html>blocked</html>")
+        assert detect_video_container(f) is None
 
 
 class TestCheckAccess:

@@ -225,13 +225,25 @@ def check_access(user_id: int) -> bool:
         return user_id in _allowed_user_ids
 
 
-def is_valid_mp4(file_path) -> bool:
+def detect_video_container(file_path) -> str | None:
+    """Контейнер по содержимому файла: mp4 (ftyp), webm или mkv (EBML); None - не видео."""
     try:
         with open(file_path, 'rb') as f:
-            header = f.read(12)
-        return len(header) >= 12 and header[4:8] == b'ftyp'
+            header = f.read(4096)
     except Exception:
-        return False
+        return None
+    if len(header) >= 12 and header[4:8] == b'ftyp':
+        return 'mp4'
+    if header[:4] == b'\x1aE\xdf\xa3':
+        if b'webm' in header:
+            return 'webm'
+        if b'matroska' in header:
+            return 'mkv'
+    return None
+
+
+def is_valid_mp4(file_path) -> bool:
+    return detect_video_container(file_path) == "mp4"
 
 
 def _is_forbidden_ip(ip) -> bool:
