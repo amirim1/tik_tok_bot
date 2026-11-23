@@ -2,6 +2,7 @@ import ipaddress
 import json
 import logging
 import math
+import re
 import socket
 import threading
 import time
@@ -299,6 +300,22 @@ def is_safe_video_url(url) -> bool:
                 return bool(addresses) and not any(_is_forbidden_ip(ipaddress.ip_address(a)) for a in addresses)
         return not _is_forbidden_ip(ip)
     return True
+
+
+URL_RE = re.compile(r"https?://[^\s<>\"\]]+", re.IGNORECASE)
+
+
+def extract_url(text) -> str | None:
+    """Первый http(s)-URL из текста сообщения (до пробела или угловой скобки).
+
+    Подпись после ссылки («ссылка 🎵 оригинальный звук - …») игнорируется.
+    """
+    if not text or not isinstance(text, str):
+        return None
+    match = URL_RE.search(text)
+    if not match:
+        return None
+    return match.group(0).rstrip(".,;:!?)>")
 
 
 def cleanup_old_files(max_age_minutes: int = 5):

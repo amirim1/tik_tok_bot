@@ -14,6 +14,7 @@ import src
 from src.config import (
     ADMIN_USER_ID,
     DOWNLOAD_TIMEOUT,
+    GET_VIDEO_DEADLINE,
     MAX_FILE_SIZE,
     MAX_FILE_SIZE_MB,
     RATE_LIMIT_CALLS,
@@ -26,16 +27,21 @@ from src.downloaders import close_all, get_downloader
 from src.utils import (
     check_access,
     cleanup_old_files,
+    detect_video_container,
+    extract_url,
     grant_access,
     is_admin,
     is_safe_video_url,
-    is_valid_mp4,
     list_allowed_users,
     rate_limit,
     revoke_access,
 )
 
 bot = telebot.TeleBot(TOKEN)
+
+# Устанавливается при SIGTERM: новые запросы не принимаются, рабочие потоки
+# дозавершают текущие загрузки (см. _wait_workers).
+_shutting_down = threading.Event()
 
 SUPPORTED_SERVICES = [
     "TikTok", "Instagram (Reels, посты)", "YouTube / YouTube Shorts",
@@ -220,6 +226,9 @@ def require_access(bot_instance):
             if user is None or not check_access(user.id):
                 bot_instance.reply_to(message, "У вас нет доступа к этому боту.")
                 return
+            if _shutting_down.is_set():
+                bot_instance.reply_to(message, "Бот перезапускается. Повторите запрос через минуту.")
+                return
             return func(message, *args, **kwargs)
 
         return wrapper
@@ -234,7 +243,11 @@ def handle_video_request(message):
     if not message.text:
         return
 
-    url = message.text.strip()
+    # Берём первый URL из текста: TikTok присылает ссылку с подписью
+    # («🎵 оригинальный звук - … https://www.tiktok.com/…»), вся строка
+    # в качестве URL не проходила проверку домена. Без http(s)-ссылки остаётся
+    # прежний случай - ссылка без схемы (tiktok.com/...).
+    url = extract_url(message.text) or message.text.strip().split(maxsplit=1)[0]
     if "://" not in url and "." not in url[:30]:
         bot.reply_to(
             message,
@@ -258,7 +271,7 @@ def handle_video_request(message):
 
     try:
         logger.info(f"Request from {message.from_user.id} [{service_name}]: {url}")
-        video_info = downloader.get_video(url)
+        video_info = downloader.get_video(url, deadline=time.monotonic() + GET_VIDEO_DEADLINE)
 
         if not video_info or not is_safe_video_url(video_info.get("video_url")):
             safe_edit(
@@ -325,6 +338,8 @@ def handle_video_request(message):
         next_progress = 5 * 1024 * 1024
         with open(video_path, 'wb') as f:
             for chunk in vr.iter_content(1024 * 1024):
+                if _shutting_down.is_set():
+                    raise ShutdownRequested
                 if chunk:
                     f.write(chunk)
                     downloaded += len(chunk)
@@ -344,7 +359,8 @@ def handle_video_request(message):
                         )
                         next_progress += 5 * 1024 * 1024
 
-        if not is_valid_mp4(video_path):
+        container = detect_video_container(video_path)
+        if container is None:
             video_path.unlink(missing_ok=True)
             video_path = None
             safe_edit(
@@ -352,6 +368,12 @@ def handle_video_request(message):
                 "Получен некорректный файл. Попробуйте другую ссылку.",
             )
             return
+        if container != "mp4":
+            # Расширение по факту (webm/mkv от yt-dlp), чтобы Telegram не считал
+            # контейнер по расширению.
+            renamed_path = video_path.with_suffix(f".{container}")
+            video_path.rename(renamed_path)
+            video_path = renamed_path
 
         safe_edit(
             message.chat.id, status_msg.message_id,
@@ -380,6 +402,14 @@ def handle_video_request(message):
 
         logger.info(f"Video sent to {message.from_user.id}")
 
+    except ShutdownRequested:
+        logger.info(f"Download aborted by shutdown: {url}")
+    except TimeoutError:
+        logger.warning(f"get_video deadline exceeded ({GET_VIDEO_DEADLINE}s): {url}")
+        safe_edit(
+            message.chat.id, status_msg.message_id,
+            f"Превышено время получения ссылки ({GET_VIDEO_DEADLINE} с). Попробуйте ещё раз.",
+        )
     except requests.exceptions.Timeout:
         logger.error(f"Timeout: {url}")
         safe_edit(message.chat.id, status_msg.message_id, "Превышено время ожидания.")
@@ -405,6 +435,34 @@ def handle_video_request(message):
 
 
 PULSE_FILE = Path.home() / "agent-bot" / "pulse" / "tiktok"
+
+# Сколько ждать рабочие потоки после SIGTERM: они обрабатывают по одной загрузке,
+# больше - сторож успеет поднять второй процесс раньше, чем завершится этот.
+SHUTDOWN_GRACE_SECONDS = 10
+
+
+class ShutdownRequested(Exception):
+    """Загрузка прервана по SIGTERM (см. _request_shutdown)."""
+
+
+def _workers_busy(pool) -> bool:
+    """Есть задача в очереди или поток выполняет задачу. У простаивающего потока
+    done_event не установлен, поэтому «занят» = задача получена и не завершена."""
+    if pool.tasks.qsize() > 0:
+        return True
+    return any(w.received_task_event.is_set() and not w.done_event.is_set() for w in pool.workers)
+
+
+def _wait_workers(timeout: float = SHUTDOWN_GRACE_SECONDS) -> bool:
+    """Ждёт, пока рабочие потоки обработают уже принятые сообщения.
+    True - все завершились; False - вышли по таймауту, потоки оборвутся с процессом."""
+    pool = bot.worker_pool
+    deadline = time.monotonic() + timeout
+    while _workers_busy(pool):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.2)
+    return True
 
 
 def _pulse_loop(interval=60):
@@ -441,6 +499,7 @@ def main():
         return
 
     signal.signal(signal.SIGTERM, _request_shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
 
     cleanup_old_files(max_age_minutes=1)
 
@@ -455,6 +514,9 @@ def main():
         logger.error(f"Fatal error: {e}", exc_info=True)
     finally:
         logger.info("Shutting down...")
+        _shutting_down.set()
+        if bot.worker_pool and not _wait_workers():
+            logger.warning(f"Workers did not finish in {SHUTDOWN_GRACE_SECONDS}s, exiting anyway")
         close_all()
         cleanup_old_files(max_age_minutes=0)
         logger.info("Bot stopped")

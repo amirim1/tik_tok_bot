@@ -2,8 +2,8 @@ import logging
 
 import yt_dlp
 
-from src.config import MAX_FILE_SIZE
-from src.downloaders.base import BaseDownloader
+from src.config import DOWNLOAD_TIMEOUT, MAX_DOWNLOAD_RETRIES, MAX_FILE_SIZE
+from src.downloaders.base import BaseDownloader, remaining_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -15,15 +15,29 @@ class YtDlpDownloader(BaseDownloader):
         self._opts = {
             'format': f'b[filesize<{MAX_FILE_SIZE}]/b',
             'format_sort': ['proto:https', 'ext:mp4:m4a'],
+            # Ограничиваем сетевые ожидания: без этого yt-dlp повторяет запрос
+            # по умолчанию (10 retries, extractor_retries=3) без общего таймаута.
+            'socket_timeout': DOWNLOAD_TIMEOUT,
+            'retries': MAX_DOWNLOAD_RETRIES,
+            'extractor_retries': MAX_DOWNLOAD_RETRIES,
+            # Если yt-dlp пришлось склеивать потоки, результат - mp4, а не webm/mkv.
+            'merge_output_format': 'mp4',
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
             'no_color': True,
         }
 
-    def get_video(self, url: str) -> dict | None:
+    def get_video(self, url: str, deadline: float | None = None) -> dict | None:
+        # Сокет-таймаут не длиннее остатка до дедлайна: последняя попытка не
+        # уходит за общий лимит. Общего таймаута на extract_info в yt-dlp нет.
+        # Остаток считаем до try: TimeoutError не должен гаситься как ошибка yt-dlp.
+        remaining = remaining_seconds(deadline)
+        opts = dict(self._opts)
+        if remaining is not None:
+            opts['socket_timeout'] = min(DOWNLOAD_TIMEOUT, remaining)
         try:
-            with yt_dlp.YoutubeDL(self._opts) as ydl:
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
 
             if not info:
@@ -34,7 +48,7 @@ class YtDlpDownloader(BaseDownloader):
                 video_url = info['url']
             elif info.get('formats'):
                 best = sorted(
-                    [f for f in info['formats'] if f.get('url') and f.get('ext') in ('mp4', 'mov', 'webm')],
+                    [f for f in info['formats'] if f.get('url') and f.get('ext') in ('mp4', 'mov', 'webm', 'mkv')],
                     key=lambda f: -(f.get('filesize') or f.get('filesize_approx') or 0)
                 )
                 if best:
